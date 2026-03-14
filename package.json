@@ -1,0 +1,76 @@
+{
+  "name": "latex-visualiser",
+  "displayName": "LaTeX Visualiser",
+  "description": "Hover over equations in your LaTeX PDF to see interactive 3D visualizations powered by Plotly",
+  "version": "0.1.0",
+  "publisher": "latex-visualiser",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Education"
+  ],
+  "activationEvents": [
+    "onLanguage:latex",
+    "onLanguage:tex"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "latexVisualiser.openViewer",
+        "title": "LaTeX Visualiser: Open PDF Viewer"
+      },
+      {
+        "command": "latexVisualiser.refreshViz",
+        "title": "LaTeX Visualiser: Refresh Visualizations"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "when": "resourceLangId == latex || resourceLangId == tex || resourceExtname == .tex",
+          "command": "latexVisualiser.openViewer",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "LaTeX Visualiser",
+      "properties": {
+        "latexVisualiser.pdfPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the compiled PDF file (auto-detected if empty)"
+        },
+        "latexVisualiser.plotResolution": {
+          "type": "number",
+          "default": 50,
+          "description": "Resolution of 3D surface plots (grid points per axis)"
+        },
+        "latexVisualiser.popupWidth": {
+          "type": "number",
+          "default": 450,
+          "description": "Width of the visualization popup in pixels"
+        },
+        "latexVisualiser.popupHeight": {
+          "type": "number",
+          "default": 400,
+          "description": "Height of the visualization popup in pixels"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}

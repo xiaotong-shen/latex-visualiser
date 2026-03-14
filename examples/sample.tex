@@ -1,0 +1,56 @@
+\documentclass{article}
+\usepackage{amsmath}
+
+% Define the viz environment (renders as equation in PDF, detected by the extension)
+\newenvironment{viz}{\begin{equation}}{\end{equation}}
+
+\title{LaTeX Visualiser Demo}
+\author{Demo}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{3D Surfaces}
+
+A paraboloid — hover over the equation in the visualiser to see it in 3D:
+
+\begin{viz}[type=surface, label=Paraboloid, xrange=-3:3, yrange=-3:3]
+z = x^2 + y^2
+\end{viz}
+
+A saddle surface:
+
+\begin{viz}[type=surface, label=Saddle Surface, xrange=-2:2, yrange=-2:2]
+z = x^2 - y^2
+\end{viz}
+
+\section{2D Curves}
+
+The classic sine wave:
+
+\begin{viz}[type=curve, label=Sine Wave, xrange=-6:6]
+y = \sin(x)
+\end{viz}
+
+A polynomial:
+
+\begin{viz}[type=curve, label=Cubic, xrange=-3:3]
+y = x^3 - 3x
+\end{viz}
+
+\section{More Complex Surfaces}
+
+A ripple function:
+
+\begin{viz}[type=surface, label=Ripple, xrange=-4:4, yrange=-4:4]
+z = \sin(x^2 + y^2)
+\end{viz}
+
+A Gaussian bump:
+
+\begin{viz}[type=surface, label=Gaussian, xrange=-3:3, yrange=-3:3, colorscale=Plasma]
+z = \exp(-(x^2 + y^2))
+\end{viz}
+
+\end{document}
