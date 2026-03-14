@@ -1,3 +1,9 @@
+//
+// HACKATHON DEMO MODE:
+// - Keep PDF.js as the primary rendering surface.
+// - Overlay centered hover zones where viz equations are estimated to appear.
+// - Hover shows a sample popup (no Plotly rendering yet).
+//
 import { PlotData } from './plotGenerator';
 import { VizMarker } from './vizParser';
 
@@ -25,7 +31,7 @@ export function getWebviewContent(options: WebviewOptions): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data: blob:; script-src 'unsafe-inline' 'unsafe-eval' https://cdn.plot.ly https://cdnjs.cloudflare.com; style-src 'unsafe-inline' ${cspSource}; font-src https://cdnjs.cloudflare.com data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data: blob:; script-src 'unsafe-inline' 'unsafe-eval' https://cdn.plot.ly https://cdnjs.cloudflare.com; style-src 'unsafe-inline' ${cspSource}; font-src ${cspSource} data:;">
   <title>LaTeX Visualiser</title>
 
   <!-- PDF.js -->
@@ -78,6 +84,80 @@ export function getWebviewContent(options: WebviewOptions): string {
       color: white;
     }
 
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .zoom-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: #11111b;
+      border: 1px solid #313244;
+      border-radius: 8px;
+      padding: 2px;
+    }
+
+    .zoom-btn {
+      width: 24px;
+      height: 22px;
+      border: none;
+      border-radius: 6px;
+      background: #313244;
+      color: #cdd6f4;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .zoom-btn:hover { background: #45475a; }
+
+    .zoom-label {
+      min-width: 44px;
+      text-align: center;
+      font-size: 11px;
+      color: #a6adc8;
+      user-select: none;
+    }
+
+    .page-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: #11111b;
+      border: 1px solid #313244;
+      border-radius: 8px;
+      padding: 2px;
+    }
+
+    .page-btn {
+      width: 24px;
+      height: 22px;
+      border: none;
+      border-radius: 6px;
+      background: #313244;
+      color: #cdd6f4;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .page-btn:hover { background: #45475a; }
+    .page-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .page-label {
+      min-width: 56px;
+      text-align: center;
+      font-size: 11px;
+      color: #a6adc8;
+      user-select: none;
+    }
+
     /* PDF container */
     .pdf-container {
       flex: 1;
@@ -103,26 +183,32 @@ export function getWebviewContent(options: WebviewOptions): string {
       border-radius: 4px;
     }
 
-    /* Viz markers on PDF */
+    /* Hover zones on PDF (approx equation boxes) */
     .viz-marker {
       position: absolute;
-      left: -8px;
-      width: calc(100% + 16px);
+      left: 20%;
+      width: 60%;
+      height: 26px;
+      transform: translateY(-50%);
       cursor: pointer;
       transition: all 0.2s ease;
       z-index: 5;
+      border-radius: 6px;
+      background: rgba(99, 102, 241, 0.03);
+      border: 1px dashed rgba(99, 102, 241, 0.25);
     }
 
     .viz-marker-line {
-      height: 2px;
-      background: linear-gradient(90deg, transparent 0%, #6366f1 10%, #6366f1 90%, transparent 100%);
-      opacity: 0;
+      height: 100%;
+      border-radius: 6px;
+      background: linear-gradient(90deg, rgba(99, 102, 241, 0.02) 0%, rgba(99, 102, 241, 0.09) 50%, rgba(99, 102, 241, 0.02) 100%);
+      opacity: 0.7;
       transition: opacity 0.3s ease;
     }
 
     .viz-marker-dot {
       position: absolute;
-      right: -14px;
+      right: 8px;
       top: 50%;
       transform: translateY(-50%);
       width: 10px;
@@ -144,7 +230,7 @@ export function getWebviewContent(options: WebviewOptions): string {
 
     .viz-marker.active .viz-marker-line {
       opacity: 1;
-      background: linear-gradient(90deg, transparent 0%, #f59e0b 10%, #f59e0b 90%, transparent 100%);
+      background: linear-gradient(90deg, rgba(245, 158, 11, 0.12) 0%, rgba(245, 158, 11, 0.2) 50%, rgba(245, 158, 11, 0.12) 100%);
     }
 
     .viz-marker.active .viz-marker-dot {
@@ -320,7 +406,19 @@ export function getWebviewContent(options: WebviewOptions): string {
 
   <div class="header">
     <h1>◈ LaTeX Visualiser</h1>
-    <span class="badge" id="vizCount">0 viz blocks</span>
+    <div class="header-right">
+      <div class="page-controls">
+        <button class="page-btn" id="pagePrev" title="Previous page">◀</button>
+        <span class="page-label" id="pageLabel">1/1</span>
+        <button class="page-btn" id="pageNext" title="Next page">▶</button>
+      </div>
+      <div class="zoom-controls">
+        <button class="zoom-btn" id="zoomOut" title="Zoom out">−</button>
+        <span class="zoom-label" id="zoomLabel">85%</span>
+        <button class="zoom-btn" id="zoomIn" title="Zoom in">+</button>
+      </div>
+      <span class="badge" id="vizCount">0 viz blocks</span>
+    </div>
   </div>
 
   <div class="pdf-container" id="pdfContainer">
@@ -359,6 +457,11 @@ export function getWebviewContent(options: WebviewOptions): string {
     let activeMarkerIndex = -1;
     let popupVisible = false;
     let pageCanvases = [];
+    let currentPage = 1;
+    let zoomLevel = 0.85;
+    const ZOOM_MIN = 0.5;
+    const ZOOM_MAX = 1.0;
+    const ZOOM_STEP = 0.1;
 
     // ========== PDF Rendering ==========
     async function initPdf(base64Data) {
@@ -381,6 +484,8 @@ export function getWebviewContent(options: WebviewOptions): string {
           'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+        currentPage = Math.max(1, Math.min(currentPage, pdfDoc.numPages || 1));
+        updatePageLabel();
         await renderAllPages();
         placeVizMarkers();
         updateBadge();
@@ -401,33 +506,33 @@ export function getWebviewContent(options: WebviewOptions): string {
 
       const containerWidth = container.clientWidth - 40; // padding
 
-      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-        const page = await pdfDoc.getPage(pageNum);
-        const baseViewport = page.getViewport({ scale: 1.0 });
-        const scale = Math.min(containerWidth / baseViewport.width, 2.0);
-        const viewport = page.getViewport({ scale });
+      const pageNum = Math.max(1, Math.min(currentPage, pdfDoc.numPages || 1));
+      const page = await pdfDoc.getPage(pageNum);
+      const baseViewport = page.getViewport({ scale: 1.0 });
+      const fitScale = Math.min(containerWidth / baseViewport.width, 2.0);
+      const scale = fitScale * zoomLevel;
+      const viewport = page.getViewport({ scale });
 
-        const wrapper = document.createElement('div');
-        wrapper.className = 'page-wrapper';
-        wrapper.dataset.page = pageNum;
-        wrapper.style.width = viewport.width + 'px';
-        wrapper.style.height = viewport.height + 'px';
+      const wrapper = document.createElement('div');
+      wrapper.className = 'page-wrapper';
+      wrapper.dataset.page = pageNum;
+      wrapper.style.width = viewport.width + 'px';
+      wrapper.style.height = viewport.height + 'px';
 
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width * window.devicePixelRatio;
-        canvas.height = viewport.height * window.devicePixelRatio;
-        canvas.style.width = viewport.width + 'px';
-        canvas.style.height = viewport.height + 'px';
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width * window.devicePixelRatio;
+      canvas.height = viewport.height * window.devicePixelRatio;
+      canvas.style.width = viewport.width + 'px';
+      canvas.style.height = viewport.height + 'px';
 
-        const ctx = canvas.getContext('2d');
-        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      const ctx = canvas.getContext('2d');
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
-        wrapper.appendChild(canvas);
-        container.appendChild(wrapper);
-        pageCanvases.push({ canvas, wrapper, viewport, pageNum });
+      wrapper.appendChild(canvas);
+      container.appendChild(wrapper);
+      pageCanvases.push({ canvas, wrapper, viewport, pageNum });
 
-        await page.render({ canvasContext: ctx, viewport }).promise;
-      }
+      await page.render({ canvasContext: ctx, viewport }).promise;
     }
 
     function showNoPdf() {
@@ -445,14 +550,54 @@ export function getWebviewContent(options: WebviewOptions): string {
     function placeVizMarkers() {
       if (!pdfDoc || MARKERS.length === 0) return;
 
-      MARKERS.forEach((marker, idx) => {
-        const pageInfo = pageCanvases.find(p => p.pageNum === marker.page);
-        if (!pageInfo) return;
+      const totalPages = Math.max(1, pdfDoc?.numPages || pageCanvases.length);
+      const visiblePage = pageCanvases[0]?.pageNum;
+      const inferred = MARKERS.map((marker, idx) => {
+        const declaredPage = Number.isFinite(marker.page) ? Math.max(1, Math.min(totalPages, marker.page)) : null;
+        const ratioByIndex = MARKERS.length > 1 ? idx / (MARKERS.length - 1) : 0;
+        const pageByIndex = Math.max(1, Math.min(totalPages, Math.floor(ratioByIndex * totalPages) + 1));
+        return {
+          marker,
+          idx,
+          page: declaredPage ?? pageByIndex,
+        };
+      });
+
+      const declaredPageSet = new Set(inferred.map(x => x.page));
+      if (declaredPageSet.size === 1 && totalPages > 1) {
+        inferred.forEach((entry) => {
+          const ratioByIndex = MARKERS.length > 1 ? entry.idx / (MARKERS.length - 1) : 0;
+          entry.page = Math.max(1, Math.min(totalPages, Math.floor(ratioByIndex * totalPages) + 1));
+        });
+      }
+
+      const byPage = new Map();
+      inferred.forEach(entry => {
+        if (!byPage.has(entry.page)) byPage.set(entry.page, []);
+        byPage.get(entry.page).push(entry);
+      });
+
+      byPage.forEach(entries => {
+        entries.sort((a, b) => (a.marker.block.lineNumber || 0) - (b.marker.block.lineNumber || 0));
+      });
+
+      inferred.forEach((entry) => {
+        if (visiblePage && entry.page !== visiblePage) { return; }
+        const pageInfo = pageCanvases.find(p => p.pageNum === entry.page);
+        if (!pageInfo) { return; }
+
+        const pageEntries = byPage.get(entry.page) || [];
+        const posOnPage = Math.max(0, pageEntries.findIndex(x => x.idx === entry.idx));
+        const rankRatio = (posOnPage + 1) / (pageEntries.length + 1);
+        const markerRatio = Math.max(0.04, Math.min(0.96, entry.marker.yRatio));
+        const yRatio = pageEntries.length > 1
+          ? Math.max(0.08, Math.min(0.92, markerRatio * 0.35 + rankRatio * 0.65))
+          : markerRatio;
 
         const markerEl = document.createElement('div');
         markerEl.className = 'viz-marker';
-        markerEl.dataset.index = idx;
-        markerEl.style.top = (marker.yRatio * pageInfo.viewport.height) + 'px';
+        markerEl.dataset.index = entry.idx;
+        markerEl.style.top = (yRatio * pageInfo.viewport.height) + 'px';
 
         markerEl.innerHTML = \`
           <div class="viz-marker-line"></div>
@@ -460,7 +605,7 @@ export function getWebviewContent(options: WebviewOptions): string {
         \`;
 
         // Hover events
-        markerEl.addEventListener('mouseenter', (e) => showPopup(idx, e));
+        markerEl.addEventListener('mouseenter', (e) => showPopup(entry.idx, e));
         markerEl.addEventListener('mouseleave', () => {
           // Delay hiding to allow moving to popup
           setTimeout(() => {
@@ -501,7 +646,9 @@ export function getWebviewContent(options: WebviewOptions): string {
       if (!plot) return;
 
       // Update popup content
-      document.getElementById('popupEquation').textContent = plot.label || plot.equation;
+      const marker = MARKERS[markerIndex];
+      const label = marker?.block?.label || plot.label || ('viz @ line ' + (marker?.block?.lineNumber ?? '?'));
+      document.getElementById('popupEquation').textContent = 'Sample Preview: ' + label;
       document.getElementById('vizTypeBadge').textContent = plot.type;
 
       // Deactivate other markers
@@ -534,8 +681,19 @@ export function getWebviewContent(options: WebviewOptions): string {
       popup.classList.add('visible');
       popupVisible = true;
 
-      // Render the plot
-      renderPlot(plot);
+      // Hackathon sample popup content (no Plotly wiring yet)
+      const container = document.getElementById('plotContainer');
+      container.style.width = CONFIG.popupWidth - 16 + 'px';
+      container.style.height = CONFIG.popupHeight + 'px';
+      container.innerHTML =
+        '<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#161622;border:1px solid #313244;border-radius:8px;color:#a6adc8;font-size:13px;line-height:1.6;text-align:center;padding:16px;">' +
+          '<div>' +
+            '<div style="color:#cba6f7;font-weight:600;margin-bottom:8px;">Equation Hover Detected</div>' +
+            '<div>Type: <b style="color:#cdd6f4;">' + plot.type + '</b></div>' +
+            '<div>Line: <b style="color:#cdd6f4;">' + (marker?.block?.lineNumber ?? '?') + '</b></div>' +
+            '<div style="margin-top:8px;color:#6c7086;">Sample popup only for demo (no plot rendering yet).</div>' +
+          '</div>' +
+        '</div>';
     }
 
     function hidePopup() {
@@ -681,6 +839,51 @@ export function getWebviewContent(options: WebviewOptions): string {
       badge.className = 'badge' + (count > 0 ? ' active' : '');
     }
 
+    function updateZoomLabel() {
+      const label = document.getElementById('zoomLabel');
+      if (label) {
+        label.textContent = Math.round(zoomLevel * 100) + '%';
+      }
+    }
+
+    function updatePageLabel() {
+      const label = document.getElementById('pageLabel');
+      const prev = document.getElementById('pagePrev');
+      const next = document.getElementById('pageNext');
+      const total = Math.max(1, pdfDoc?.numPages || 1);
+      currentPage = Math.max(1, Math.min(currentPage, total));
+      if (label) {
+        label.textContent = currentPage + '/' + total;
+      }
+      if (prev) {
+        prev.disabled = currentPage <= 1;
+      }
+      if (next) {
+        next.disabled = currentPage >= total;
+      }
+    }
+
+    async function changePage(delta) {
+      if (!pdfDoc) { return; }
+      const nextPage = Math.max(1, Math.min(currentPage + delta, pdfDoc.numPages || 1));
+      if (nextPage === currentPage) { return; }
+      currentPage = nextPage;
+      updatePageLabel();
+      await renderAllPages();
+      placeVizMarkers();
+      hidePopup();
+    }
+
+    async function applyZoom(delta) {
+      if (!pdfDoc) { return; }
+      const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomLevel + delta));
+      if (Math.abs(next - zoomLevel) < 0.0001) { return; }
+      zoomLevel = next;
+      updateZoomLabel();
+      await renderAllPages();
+      placeVizMarkers();
+    }
+
     // ========== Message Handler ==========
     window.addEventListener('message', event => {
       const msg = event.data;
@@ -696,6 +899,7 @@ export function getWebviewContent(options: WebviewOptions): string {
           break;
 
         case 'updatePdf':
+          currentPage = 1;
           initPdf(msg.pdfBase64);
           break;
       }
@@ -703,12 +907,24 @@ export function getWebviewContent(options: WebviewOptions): string {
 
     // ========== Init ==========
     document.addEventListener('DOMContentLoaded', () => {
+      updateZoomLabel();
+      updatePageLabel();
+      document.getElementById('pagePrev').addEventListener('click', () => changePage(-1));
+      document.getElementById('pageNext').addEventListener('click', () => changePage(1));
+      document.getElementById('zoomOut').addEventListener('click', () => applyZoom(-ZOOM_STEP));
+      document.getElementById('zoomIn').addEventListener('click', () => applyZoom(ZOOM_STEP));
       initPdf(PDF_BASE64);
       vscode.postMessage({ type: 'ready' });
     });
 
     // Also fire init if DOMContentLoaded already happened
     if (document.readyState !== 'loading') {
+      updateZoomLabel();
+      updatePageLabel();
+      document.getElementById('pagePrev').addEventListener('click', () => changePage(-1));
+      document.getElementById('pageNext').addEventListener('click', () => changePage(1));
+      document.getElementById('zoomOut').addEventListener('click', () => applyZoom(-ZOOM_STEP));
+      document.getElementById('zoomIn').addEventListener('click', () => applyZoom(ZOOM_STEP));
       initPdf(PDF_BASE64);
       vscode.postMessage({ type: 'ready' });
     }

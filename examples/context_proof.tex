@@ -1,0 +1,34 @@
+The two-sided cone $S=\{(x,y,z)\in\mathbb{R}^3:x^2+y^2=z^2,-2\leq z\leq2\}$ is parametrized by the cylindrical coordinates $\max G:[0,2\pi]\times[-2,2]\to\mathbb{R}^3$ given by
+$$G(s,t)=(t\cos s,t\sin s,t).$$
+
+$\textbf{Notice that}$
+
+$$\begin{aligned}&\partial_1G(s,t)=(-t\sin s,t\cos s,0),\\&\partial_2G(s,t)=(\cos s,\sin s,1).\end{aligned}$$
+You can verify that the map $G$ is smooth, and $\{\partial_1G(s,t),\partial_2G(s,t)\}$ is linearly dependent if and only if $s\in(0,2\pi)$ and $t=0.$ Play with this Math3D demo to
+
+
+
+view this phenomenon.
+Thus, $G$ is not regular so you cannot conclude whether $S$ is a surface. In fact, $S$ is not a surface but it is not easy to formally prove as you need to exclude all possible parametrizations You can, however, write $S$ as a union of two surfaces.
+$\bullet$ Define the upper cone
+
+$$S_1=\{(x,y,z)\in\mathbb{R}^3:x^2+y^2=z^2,0\leq z\leq2\}.$$
+
+The map $G_1:U_1\to\mathbb{R}^3$ given by $U_1=[0,2\pi]\times[0,2]$ and $G_1(s,t)=(t\cos s,t\sin s,t)$
+
+is a simple smooth regular parametrization of $S_1$ and hence $S_1$ is a surface.
+
+$\bullet$ Define the lower cone
+
+$$S_2=\{(x,y,z)\in\mathbb{R}^3:x^2+y^2=z^2,-2\leq z\leq0\}.$$
+
+The map $G_2:U_2\to\mathbb{R}^3$ given by $U_2=[0,2\pi]\times[-2,0]$ and $G_2(s,t)=(t\cos s,t\sin s,t)$
+is a simple smooth regular parametrization of $S_2$ and hence $S_2$ is a surface.
+Thus, $S=S_1\cup S_2$ and, more importantly, the intersection $S_1\cap S_2$ is equal to the image of the
+$\textbf{domain boundaries of }G_1$ and $G_2$, namely
+
+$$S_1\cap S_2=G_1(\partial U_1)\cap G_2(\partial U_2).$$
+
+The surfaces $S_1$ and $S_2$ are "glued along their parametrization's domain boundaries"
+
+% courtesy of MAT237 text book
