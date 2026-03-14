@@ -261,6 +261,12 @@ export function getWebviewContent(options: WebviewOptions): string {
       pointer-events: none;
     }
 
+    .viz-popup.dragging,
+    .viz-popup.resizing {
+      transition: none;
+      user-select: none;
+    }
+
     .viz-popup.visible {
       opacity: 1;
       transform: translateY(0) scale(1);
@@ -274,6 +280,11 @@ export function getWebviewContent(options: WebviewOptions): string {
       padding: 10px 16px;
       background: #181825;
       border-bottom: 1px solid #313244;
+      cursor: grab;
+    }
+
+    .viz-popup-header:active {
+      cursor: grabbing;
     }
 
     .viz-popup-header .equation-label {
@@ -344,6 +355,25 @@ export function getWebviewContent(options: WebviewOptions): string {
     .viz-popup-body .plot-container {
       border-radius: 8px;
       overflow: hidden;
+    }
+
+    .resize-handle {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      right: 4px;
+      bottom: 4px;
+      cursor: nwse-resize;
+      border-right: 2px solid #6c7086;
+      border-bottom: 2px solid #6c7086;
+      opacity: 0.8;
+      z-index: 120;
+      touch-action: none;
+    }
+
+    .resize-handle:hover {
+      opacity: 1;
+      border-color: #89b4fa;
     }
 
     .viz-popup-footer {
@@ -482,6 +512,7 @@ export function getWebviewContent(options: WebviewOptions): string {
       <span class="viz-type-badge" id="vizTypeBadge"></span>
       <button class="goto-btn" id="gotoSource">Go to source ↗</button>
     </div>
+    <div class="resize-handle" id="popupResizeHandle" title="Resize popup"></div>
   </div>
 
   <script>
@@ -501,9 +532,22 @@ export function getWebviewContent(options: WebviewOptions): string {
     let currentPage = 1;
     let zoomLevel = 0.85;
     let templateRenderTimer = null;
+    let draggingPopup = false;
+    let resizingPopup = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    let resizeStartX = 0;
+    let resizeStartY = 0;
+    let resizeStartW = 0;
+    let resizeStartH = 0;
+    let activeResizePointerId = null;
+    let resizeRafPending = false;
+    let customPopupRect = null;
     const ZOOM_MIN = 0.5;
     const ZOOM_MAX = 1.0;
     const ZOOM_STEP = 0.1;
+    const POPUP_MIN_W = 380;
+    const POPUP_MIN_H = 300;
 
     // ========== PDF Rendering ==========
     async function initPdf(base64Data) {
@@ -671,7 +715,9 @@ export function getWebviewContent(options: WebviewOptions): string {
     let isMouseOverPopup = false;
     let pinnedMarkerIndex = -1;
     const popup = document.getElementById('vizPopup');
+    const popupHeader = popup.querySelector('.viz-popup-header');
     const popupPinBtn = document.getElementById('popupPin');
+    const popupResizeHandle = document.getElementById('popupResizeHandle');
 
     popup.addEventListener('mouseenter', () => { isMouseOverPopup = true; });
     popup.addEventListener('mouseleave', () => {
@@ -679,19 +725,114 @@ export function getWebviewContent(options: WebviewOptions): string {
       hidePopup();
     });
 
-    popup.addEventListener('click', () => {
-      if (activeMarkerIndex < 0) { return; }
-      if (pinnedMarkerIndex === activeMarkerIndex) {
-        pinnedMarkerIndex = -1;
-      } else {
-        pinnedMarkerIndex = activeMarkerIndex;
+    popupHeader.addEventListener('pointerdown', (e) => {
+      // Ignore dragging when clicking action buttons.
+      if (e.target.closest('.popup-header-actions')) { return; }
+      if (pinnedMarkerIndex < 0) { return; }
+      e.preventDefault();
+      draggingPopup = true;
+      popup.classList.add('dragging');
+      popupHeader.setPointerCapture(e.pointerId);
+      const rect = popup.getBoundingClientRect();
+      dragOffsetX = e.clientX - rect.left;
+      dragOffsetY = e.clientY - rect.top;
+      customPopupRect = {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+
+    popupHeader.addEventListener('pointermove', (e) => {
+      if (!draggingPopup) { return; }
+      const width = customPopupRect?.width || popup.getBoundingClientRect().width;
+      const height = customPopupRect?.height || popup.getBoundingClientRect().height;
+      const maxLeft = Math.max(0, window.innerWidth - width - 8);
+      const maxTop = Math.max(0, window.innerHeight - height - 8);
+      const nextLeft = Math.max(8, Math.min(maxLeft, e.clientX - dragOffsetX));
+      const nextTop = Math.max(8, Math.min(maxTop, e.clientY - dragOffsetY));
+      popup.style.left = nextLeft + 'px';
+      popup.style.top = nextTop + 'px';
+      customPopupRect = {
+        left: nextLeft,
+        top: nextTop,
+        width,
+        height,
+      };
+    });
+
+    popupHeader.addEventListener('pointerup', (e) => {
+      if (!draggingPopup) { return; }
+      draggingPopup = false;
+      popup.classList.remove('dragging');
+      popupHeader.releasePointerCapture(e.pointerId);
+    });
+
+    popupResizeHandle.addEventListener('pointerdown', (e) => {
+      if (pinnedMarkerIndex < 0) { return; }
+      if (e.button !== 0) { return; }
+      e.preventDefault();
+      e.stopPropagation();
+      resizingPopup = true;
+      activeResizePointerId = e.pointerId;
+      popup.classList.add('resizing');
+      popupResizeHandle.setPointerCapture(e.pointerId);
+      const rect = popup.getBoundingClientRect();
+      resizeStartX = e.clientX;
+      resizeStartY = e.clientY;
+      resizeStartW = rect.width;
+      resizeStartH = rect.height;
+      customPopupRect = {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+
+    popupResizeHandle.addEventListener('pointermove', (e) => {
+      if (!resizingPopup) { return; }
+      if (activeResizePointerId !== e.pointerId) { return; }
+      // If primary button is no longer pressed, end resize to avoid "stuck" mode.
+      if ((e.buttons & 1) !== 1) {
+        endResize(e.pointerId);
+        return;
       }
-      updatePinUi();
+      const deltaX = e.clientX - resizeStartX;
+      const deltaY = e.clientY - resizeStartY;
+      const nextWidth = Math.max(POPUP_MIN_W, Math.min(window.innerWidth - 16, resizeStartW + deltaX));
+      const nextHeight = Math.max(POPUP_MIN_H, Math.min(window.innerHeight - 16, resizeStartH + deltaY));
+      popup.style.width = nextWidth + 'px';
+      applyPlotContainerSize(nextWidth, nextHeight);
+      schedulePlotResize();
+      customPopupRect = {
+        left: customPopupRect?.left ?? popup.getBoundingClientRect().left,
+        top: customPopupRect?.top ?? popup.getBoundingClientRect().top,
+        width: nextWidth,
+        height: nextHeight,
+      };
+    });
+
+    popupResizeHandle.addEventListener('pointerup', (e) => {
+      if (!resizingPopup) { return; }
+      endResize(e.pointerId);
+    });
+
+    popupResizeHandle.addEventListener('pointercancel', (e) => {
+      if (!resizingPopup) { return; }
+      endResize(e.pointerId);
+    });
+
+    popupResizeHandle.addEventListener('lostpointercapture', () => {
+      if (!resizingPopup) { return; }
+      endResize(activeResizePointerId);
     });
 
     document.getElementById('popupClose').addEventListener('click', (e) => {
       e.stopPropagation();
       pinnedMarkerIndex = -1;
+      customPopupRect = null;
       updatePinUi();
       hidePopup(true);
     });
@@ -701,6 +842,7 @@ export function getWebviewContent(options: WebviewOptions): string {
       if (activeMarkerIndex < 0) { return; }
       if (pinnedMarkerIndex === activeMarkerIndex) {
         pinnedMarkerIndex = -1;
+        customPopupRect = null;
       } else {
         pinnedMarkerIndex = activeMarkerIndex;
       }
@@ -747,11 +889,11 @@ export function getWebviewContent(options: WebviewOptions): string {
       // Position popup near the marker
       const markerEl = event.currentTarget || event.target.closest('.viz-marker');
       const rect = markerEl.getBoundingClientRect();
-      const popupW = CONFIG.popupWidth;
-      const popupH = CONFIG.popupHeight + 80; // header + footer
+      const popupW = customPopupRect?.width || CONFIG.popupWidth;
+      const popupH = customPopupRect?.height || (CONFIG.popupHeight + 80); // header + footer
 
-      let left = rect.right + 20;
-      let top = rect.top - popupH / 2;
+      let left = customPopupRect?.left ?? (rect.right + 20);
+      let top = customPopupRect?.top ?? (rect.top - popupH / 2);
 
       // Keep popup within viewport
       if (left + popupW > window.innerWidth) {
@@ -765,6 +907,9 @@ export function getWebviewContent(options: WebviewOptions): string {
       popup.style.left = left + 'px';
       popup.style.top = top + 'px';
       popup.style.width = popupW + 'px';
+
+      // Keep plot area in sync with popup size.
+      applyPlotContainerSize(popupW, popupH);
 
       // Show popup
       popup.classList.add('visible');
@@ -810,8 +955,7 @@ export function getWebviewContent(options: WebviewOptions): string {
       const container = document.getElementById('plotContainer');
       const popupWidth = Number(CONFIG.popupWidth) || 450;
       const popupHeight = Number(CONFIG.popupHeight) || 360;
-      container.style.width = (popupWidth - 16) + 'px';
-      container.style.height = popupHeight + 'px';
+      applyPlotContainerSize(popupWidth, popupHeight);
 
       const type = marker?.block?.vizType || plot?.type || 'unknown';
       container.innerHTML =
@@ -827,13 +971,35 @@ export function getWebviewContent(options: WebviewOptions): string {
       popupPinBtn.title = isPinned ? 'Unpin popup' : 'Pin popup';
     }
 
+    function endResize(pointerId) {
+      resizingPopup = false;
+      popup.classList.remove('resizing');
+      if (pointerId !== null && pointerId !== undefined) {
+        try {
+          popupResizeHandle.releasePointerCapture(pointerId);
+        } catch {
+          // Ignore if capture was already released.
+        }
+      }
+      activeResizePointerId = null;
+      resizeActivePlot();
+    }
+
+    function schedulePlotResize() {
+      if (resizeRafPending) { return; }
+      resizeRafPending = true;
+      requestAnimationFrame(() => {
+        resizeRafPending = false;
+        resizeActivePlot();
+      });
+    }
+
     function renderPopupMessage(marker, plot) {
       const container = document.getElementById('plotContainer');
       const popupWidth = Number(CONFIG.popupWidth) || 450;
       const popupHeight = Number(CONFIG.popupHeight) || 360;
-      container.style.width = (popupWidth - 16) + 'px';
-      container.style.height = popupHeight + 'px';
-      container.style.minHeight = popupHeight + 'px';
+      applyPlotContainerSize(popupWidth, popupHeight);
+      container.style.minHeight = Math.max(120, popupHeight - 88) + 'px';
       container.style.background = '#161622';
       container.style.border = '1px solid #313244';
       container.style.borderRadius = '8px';
@@ -939,8 +1105,10 @@ export function getWebviewContent(options: WebviewOptions): string {
 
     function renderPlot(plotData) {
       const container = document.getElementById('plotContainer');
-      container.style.width = CONFIG.popupWidth - 16 + 'px';
-      container.style.height = CONFIG.popupHeight + 'px';
+      const popupRect = popup.getBoundingClientRect();
+      const plotW = popupRect.width > 0 ? popupRect.width : Number(CONFIG.popupWidth) || 450;
+      const plotH = popupRect.height > 0 ? popupRect.height : (Number(CONFIG.popupHeight) || 360) + 80;
+      applyPlotContainerSize(plotW, plotH);
       container.innerHTML = '';
 
       const traces = plotData.data.map(trace => {
@@ -1078,6 +1246,30 @@ export function getWebviewContent(options: WebviewOptions): string {
           '<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#161622;border:1px solid #313244;border-radius:8px;color:#f38ba8;font-size:12px;line-height:1.6;text-align:center;padding:14px;">' +
           'Plot render failed.<br/>Open Developer Tools console for details.' +
           '</div>';
+      }
+    }
+
+    function applyPlotContainerSize(popupWidth, popupHeight) {
+      const container = document.getElementById('plotContainer');
+      const plotWidth = Math.max(220, Number(popupWidth) - 16);
+      const plotHeight = Math.max(160, Number(popupHeight) - 88);
+      container.style.width = plotWidth + 'px';
+      container.style.height = plotHeight + 'px';
+    }
+
+    function resizeActivePlot() {
+      const container = document.getElementById('plotContainer');
+      if (typeof Plotly === 'undefined' || !Plotly.Plots || !Plotly.Plots.resize) {
+        return;
+      }
+      // Only attempt resize when a Plotly graph is mounted in this container.
+      if (!container || !container.classList.contains('js-plotly-plot')) {
+        return;
+      }
+      try {
+        Plotly.Plots.resize(container);
+      } catch (err) {
+        console.warn('Plot resize failed:', err);
       }
     }
 
