@@ -1,8 +1,8 @@
 \documentclass{article}
 \usepackage{amsmath}
 
-% Define the viz environment (renders as equation in PDF, detected by the extension)
-\newenvironment{viz}{\begin{equation}}{\end{equation}}
+% Define the viz environment (consumes optional args so they don't render in PDF)
+\newenvironment{viz}[1][]{\begin{equation}}{\end{equation}}
 
 \title{LaTeX Visualiser Demo}
 \author{Demo}

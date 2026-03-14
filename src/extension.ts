@@ -163,8 +163,21 @@ async function loadWebview(context: vscode.ExtensionContext, pdfPath: string | u
   const markers = estimateVizPositions(blocks, totalLines, Math.max(1, Math.ceil(totalLines / 50)));
 
   // Generate the HTML content
+  const pdfjsScriptUri = currentPanel.webview.asWebviewUri(
+    vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.min.mjs')
+  ).toString();
+  const pdfjsWorkerUri = currentPanel.webview.asWebviewUri(
+    vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs')
+  ).toString();
+  const plotlyScriptUri = currentPanel.webview.asWebviewUri(
+    vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'plotly.js-dist-min', 'plotly.min.js')
+  ).toString();
+
   const html = getWebviewContent({
     pdfBase64,
+    pdfjsScriptUri,
+    pdfjsWorkerUri,
+    plotlyScriptUri,
     plots,
     markers,
     config: { popupWidth, popupHeight, resolution },

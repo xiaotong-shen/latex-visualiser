@@ -72,5 +72,9 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.5.207",
+    "plotly.js-dist-min": "^3.4.0"
   }
 }

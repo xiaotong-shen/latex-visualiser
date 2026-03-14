@@ -9,6 +9,9 @@ import { VizMarker } from './vizParser';
 
 interface WebviewOptions {
   pdfBase64?: string;
+  pdfjsScriptUri: string;
+  pdfjsWorkerUri: string;
+  plotlyScriptUri: string;
   plots: PlotData[];
   markers: VizMarker[];
   config: {
@@ -20,7 +23,7 @@ interface WebviewOptions {
 }
 
 export function getWebviewContent(options: WebviewOptions): string {
-  const { pdfBase64, plots, markers, config, cspSource } = options;
+  const { pdfBase64, pdfjsScriptUri, pdfjsWorkerUri, plotlyScriptUri, plots, markers, config, cspSource } = options;
 
   const plotsJson = JSON.stringify(plots);
   const markersJson = JSON.stringify(markers);
@@ -31,14 +34,18 @@ export function getWebviewContent(options: WebviewOptions): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data: blob:; script-src 'unsafe-inline' 'unsafe-eval' https://cdn.plot.ly https://cdnjs.cloudflare.com; style-src 'unsafe-inline' ${cspSource}; font-src ${cspSource} data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data: blob:; script-src 'unsafe-inline' 'unsafe-eval' ${cspSource}; style-src 'unsafe-inline' ${cspSource}; font-src ${cspSource} data:;">
   <title>LaTeX Visualiser</title>
 
-  <!-- PDF.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- PDF.js (local module) -->
+  <script type="module">
+    import * as pdfjsLibModule from "${pdfjsScriptUri}";
+    window.pdfjsLib = pdfjsLibModule;
+    window.PDFJS_WORKER_URI = "${pdfjsWorkerUri}";
+  </script>
 
-  <!-- Plotly -->
-  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <!-- Plotly (local) -->
+  <script src="${plotlyScriptUri}"></script>
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -279,6 +286,37 @@ export function getWebviewContent(options: WebviewOptions): string {
       white-space: nowrap;
     }
 
+    .popup-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pin-btn {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: none;
+      background: #45475a;
+      color: #a6adc8;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      transition: background 0.15s ease;
+    }
+
+    .pin-btn:hover {
+      background: #89b4fa;
+      color: #11111b;
+    }
+
+    .pin-btn.pinned {
+      background: #f9e2af;
+      color: #11111b;
+    }
+
     .viz-popup-header .close-btn {
       width: 20px;
       height: 20px;
@@ -432,7 +470,10 @@ export function getWebviewContent(options: WebviewOptions): string {
   <div class="viz-popup" id="vizPopup">
     <div class="viz-popup-header">
       <span class="equation-label" id="popupEquation"></span>
-      <button class="close-btn" id="popupClose">✕</button>
+      <div class="popup-header-actions">
+        <button class="pin-btn" id="popupPin" title="Pin popup">📌</button>
+        <button class="close-btn" id="popupClose">✕</button>
+      </div>
     </div>
     <div class="viz-popup-body">
       <div class="plot-container" id="plotContainer"></div>
@@ -459,6 +500,7 @@ export function getWebviewContent(options: WebviewOptions): string {
     let pageCanvases = [];
     let currentPage = 1;
     let zoomLevel = 0.85;
+    let templateRenderTimer = null;
     const ZOOM_MIN = 0.5;
     const ZOOM_MAX = 1.0;
     const ZOOM_STEP = 0.1;
@@ -480,10 +522,12 @@ export function getWebviewContent(options: WebviewOptions): string {
           bytes[i] = binaryString.charCodeAt(i);
         }
 
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        if (!window.pdfjsLib) {
+          throw new Error('PDF.js local module not loaded');
+        }
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = window.PDFJS_WORKER_URI;
 
-        pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+        pdfDoc = await window.pdfjsLib.getDocument({ data: bytes }).promise;
         currentPage = Math.max(1, Math.min(currentPage, pdfDoc.numPages || 1));
         updatePageLabel();
         await renderAllPages();
@@ -605,7 +649,13 @@ export function getWebviewContent(options: WebviewOptions): string {
         \`;
 
         // Hover events
-        markerEl.addEventListener('mouseenter', (e) => showPopup(entry.idx, e));
+        markerEl.addEventListener('mouseenter', (e) => showPopup(entry.idx, e, false));
+        markerEl.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          pinnedMarkerIndex = entry.idx;
+          showPopup(entry.idx, e, true);
+        });
         markerEl.addEventListener('mouseleave', () => {
           // Delay hiding to allow moving to popup
           setTimeout(() => {
@@ -619,7 +669,9 @@ export function getWebviewContent(options: WebviewOptions): string {
 
     // ========== Popup Logic ==========
     let isMouseOverPopup = false;
+    let pinnedMarkerIndex = -1;
     const popup = document.getElementById('vizPopup');
+    const popupPinBtn = document.getElementById('popupPin');
 
     popup.addEventListener('mouseenter', () => { isMouseOverPopup = true; });
     popup.addEventListener('mouseleave', () => {
@@ -627,9 +679,36 @@ export function getWebviewContent(options: WebviewOptions): string {
       hidePopup();
     });
 
-    document.getElementById('popupClose').addEventListener('click', () => hidePopup());
+    popup.addEventListener('click', () => {
+      if (activeMarkerIndex < 0) { return; }
+      if (pinnedMarkerIndex === activeMarkerIndex) {
+        pinnedMarkerIndex = -1;
+      } else {
+        pinnedMarkerIndex = activeMarkerIndex;
+      }
+      updatePinUi();
+    });
 
-    document.getElementById('gotoSource').addEventListener('click', () => {
+    document.getElementById('popupClose').addEventListener('click', (e) => {
+      e.stopPropagation();
+      pinnedMarkerIndex = -1;
+      updatePinUi();
+      hidePopup(true);
+    });
+
+    popupPinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (activeMarkerIndex < 0) { return; }
+      if (pinnedMarkerIndex === activeMarkerIndex) {
+        pinnedMarkerIndex = -1;
+      } else {
+        pinnedMarkerIndex = activeMarkerIndex;
+      }
+      updatePinUi();
+    });
+
+    document.getElementById('gotoSource').addEventListener('click', (e) => {
+      e.stopPropagation();
       if (activeMarkerIndex >= 0 && MARKERS[activeMarkerIndex]) {
         vscode.postMessage({
           type: 'openTexLine',
@@ -638,18 +717,27 @@ export function getWebviewContent(options: WebviewOptions): string {
       }
     });
 
-    function showPopup(markerIndex, event) {
-      if (activeMarkerIndex === markerIndex && popupVisible) return;
+    function showPopup(markerIndex, event, force = false) {
+      if (!force && pinnedMarkerIndex >= 0 && pinnedMarkerIndex !== markerIndex) {
+        return;
+      }
+      if (!force && activeMarkerIndex === markerIndex && popupVisible) return;
       activeMarkerIndex = markerIndex;
 
-      const plot = PLOTS[markerIndex];
-      if (!plot) return;
+      const marker = MARKERS[markerIndex];
+      const plotIndex = marker?.block?.index ?? markerIndex;
+      const plot = PLOTS[plotIndex] || {
+        type: 'scatter',
+        label: 'Missing plot data',
+        equation: '',
+        data: [],
+        layout: {},
+      };
 
       // Update popup content
-      const marker = MARKERS[markerIndex];
       const label = marker?.block?.label || plot.label || ('viz @ line ' + (marker?.block?.lineNumber ?? '?'));
-      document.getElementById('popupEquation').textContent = 'Sample Preview: ' + label;
-      document.getElementById('vizTypeBadge').textContent = plot.type;
+      document.getElementById('popupEquation').textContent = 'Preview: ' + label;
+      document.getElementById('vizTypeBadge').textContent = marker?.block?.vizType || plot.type;
 
       // Deactivate other markers
       document.querySelectorAll('.viz-marker').forEach(el => el.classList.remove('active'));
@@ -657,7 +745,8 @@ export function getWebviewContent(options: WebviewOptions): string {
       if (activeEl) activeEl.classList.add('active');
 
       // Position popup near the marker
-      const rect = event.target.closest('.viz-marker').getBoundingClientRect();
+      const markerEl = event.currentTarget || event.target.closest('.viz-marker');
+      const rect = markerEl.getBoundingClientRect();
       const popupW = CONFIG.popupWidth;
       const popupH = CONFIG.popupHeight + 80; // header + footer
 
@@ -680,27 +769,161 @@ export function getWebviewContent(options: WebviewOptions): string {
       // Show popup
       popup.classList.add('visible');
       popupVisible = true;
+      updatePinUi();
 
-      // Hackathon sample popup content (no Plotly wiring yet)
-      const container = document.getElementById('plotContainer');
-      container.style.width = CONFIG.popupWidth - 16 + 'px';
-      container.style.height = CONFIG.popupHeight + 'px';
-      container.innerHTML =
-        '<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#161622;border:1px solid #313244;border-radius:8px;color:#a6adc8;font-size:13px;line-height:1.6;text-align:center;padding:16px;">' +
-          '<div>' +
-            '<div style="color:#cba6f7;font-weight:600;margin-bottom:8px;">Equation Hover Detected</div>' +
-            '<div>Type: <b style="color:#cdd6f4;">' + plot.type + '</b></div>' +
-            '<div>Line: <b style="color:#cdd6f4;">' + (marker?.block?.lineNumber ?? '?') + '</b></div>' +
-            '<div style="margin-top:8px;color:#6c7086;">Sample popup only for demo (no plot rendering yet).</div>' +
-          '</div>' +
-        '</div>';
+      if (templateRenderTimer) {
+        clearTimeout(templateRenderTimer);
+        templateRenderTimer = null;
+      }
+
+      // Hover is lightweight; click/pin does the heavier real Plotly render.
+      if (!force && pinnedMarkerIndex !== markerIndex) {
+        renderLightweightPlaceholder(marker, plot);
+        return;
+      }
+
+      templateRenderTimer = setTimeout(() => {
+        try {
+          renderPlot(plot);
+        } catch (err) {
+          console.error('renderPlot crash, falling back to template:', err);
+          renderPopupMessage(marker, plot);
+        }
+      }, 120);
     }
 
-    function hidePopup() {
+    function hidePopup(force = false) {
+      if (!force && pinnedMarkerIndex >= 0) {
+        return;
+      }
+      if (templateRenderTimer) {
+        clearTimeout(templateRenderTimer);
+        templateRenderTimer = null;
+      }
       popup.classList.remove('visible');
       popupVisible = false;
       activeMarkerIndex = -1;
       document.querySelectorAll('.viz-marker').forEach(el => el.classList.remove('active'));
+    }
+
+    function renderLightweightPlaceholder(marker, plot) {
+      const container = document.getElementById('plotContainer');
+      const popupWidth = Number(CONFIG.popupWidth) || 450;
+      const popupHeight = Number(CONFIG.popupHeight) || 360;
+      container.style.width = (popupWidth - 16) + 'px';
+      container.style.height = popupHeight + 'px';
+
+      const type = marker?.block?.vizType || plot?.type || 'unknown';
+      container.innerHTML =
+        '<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#161622;border:1px solid #313244;border-radius:8px;color:#a6adc8;font-size:12px;text-align:center;padding:12px;">' +
+        'Hover preview (' + type + ')<br/>Click equation or 📌 to load graph.' +
+        '</div>';
+    }
+
+    function updatePinUi() {
+      if (!popupPinBtn) { return; }
+      const isPinned = pinnedMarkerIndex >= 0;
+      popupPinBtn.classList.toggle('pinned', isPinned);
+      popupPinBtn.title = isPinned ? 'Unpin popup' : 'Pin popup';
+    }
+
+    function renderPopupMessage(marker, plot) {
+      const container = document.getElementById('plotContainer');
+      const popupWidth = Number(CONFIG.popupWidth) || 450;
+      const popupHeight = Number(CONFIG.popupHeight) || 360;
+      container.style.width = (popupWidth - 16) + 'px';
+      container.style.height = popupHeight + 'px';
+      container.style.minHeight = popupHeight + 'px';
+      container.style.background = '#161622';
+      container.style.border = '1px solid #313244';
+      container.style.borderRadius = '8px';
+
+      container.innerHTML =
+        '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#a6adc8;font-size:12px;text-align:center;padding:12px;">' +
+        'Loading graph template…' +
+        '</div>';
+
+      const label = marker?.block?.label || plot?.label || 'Unnamed viz block';
+      const line = marker?.block?.lineNumber ?? '?';
+      const type = marker?.block?.vizType || plot?.type || 'unknown';
+
+      const layout = {
+        title: {
+          text: 'Template: ' + label,
+          font: { size: 12, color: '#bac2de' },
+        },
+        annotations: [{
+          text: 'Type: ' + type + ' | Line: ' + line,
+          xref: 'paper',
+          yref: 'paper',
+          x: 0.5,
+          y: 0.5,
+          showarrow: false,
+          font: { size: 12, color: '#7f849c' },
+        }],
+        xaxis: {
+          title: 'x',
+          range: [-10, 10],
+          showline: true,
+          showgrid: true,
+          gridcolor: '#313244',
+          zerolinecolor: '#45475a',
+        },
+        yaxis: {
+          title: 'y',
+          range: [-10, 10],
+          showline: true,
+          showgrid: true,
+          gridcolor: '#313244',
+          zerolinecolor: '#45475a',
+        },
+        margin: { l: 40, r: 20, t: 40, b: 40 },
+        font: { color: '#cdd6f4', size: 10 },
+        paper_bgcolor: '#1e1e2e',
+        plot_bgcolor: '#1e1e2e',
+      };
+
+      // Hidden template trace ensures axes are rendered consistently across Plotly versions.
+      const templateTrace = [{
+        type: 'scatter',
+        mode: 'lines',
+        x: [-10, 10],
+        y: [0, 0],
+        line: { color: 'rgba(0,0,0,0)', width: 1 },
+        hoverinfo: 'skip',
+        showlegend: false,
+      }];
+
+      try {
+        if (typeof Plotly === 'undefined' || typeof Plotly.newPlot !== 'function') {
+          container.innerHTML =
+            '<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#161622;border:1px solid #313244;border-radius:8px;color:#f9e2af;font-size:12px;text-align:center;padding:12px;">' +
+            'Plotly did not load in webview.<br/>Check network/CSP and reload panel.' +
+            '</div>';
+          return;
+        }
+
+        requestAnimationFrame(() => {
+          Plotly.newPlot(container, templateTrace, layout, {
+            responsive: true,
+            displayModeBar: true,
+            displaylogo: false,
+            modeBarButtonsToRemove: ['toImage', 'sendDataToCloud'],
+          }).catch(err => {
+            console.error('Template Plotly promise rejected:', err);
+            container.innerHTML =
+              '<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#161622;border:1px solid #313244;border-radius:8px;color:#f38ba8;font-size:12px;text-align:center;padding:12px;">' +
+              'Template graph failed (async).<br/>Open webview devtools for details.' +
+              '</div>';
+          });
+        });
+      } catch (err) {
+        console.error('Template Plotly render failed:', err);
+        container.innerHTML =
+          '<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#161622;border:1px solid #313244;border-radius:8px;color:#f38ba8;font-size:12px;text-align:center;padding:12px;">' +
+          'Template graph failed to render.<br/>Open webview devtools for details.' +
+          '</div>';
+      }
     }
 
     // ========== Plot Rendering ==========
@@ -718,6 +941,7 @@ export function getWebviewContent(options: WebviewOptions): string {
       const container = document.getElementById('plotContainer');
       container.style.width = CONFIG.popupWidth - 16 + 'px';
       container.style.height = CONFIG.popupHeight + 'px';
+      container.innerHTML = '';
 
       const traces = plotData.data.map(trace => {
         const processed = { ...trace };
@@ -823,12 +1047,38 @@ export function getWebviewContent(options: WebviewOptions): string {
         layout.yaxis = { ...layout.yaxis, gridcolor: '#313244', zerolinecolor: '#45475a' };
       }
 
-      Plotly.newPlot(container, traces, layout, {
-        responsive: true,
-        displayModeBar: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: ['toImage', 'sendDataToCloud'],
-      });
+      try {
+        const hasDrawableData = traces.some(t => {
+          if (Array.isArray(t.z)) {
+            return t.z.some(row => Array.isArray(row) && row.some(v => typeof v === 'number' && isFinite(v)));
+          }
+          if (Array.isArray(t.y)) {
+            return t.y.some(v => typeof v === 'number' && isFinite(v));
+          }
+          return false;
+        });
+
+        if (!hasDrawableData) {
+          container.innerHTML =
+            '<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#161622;border:1px solid #313244;border-radius:8px;color:#a6adc8;font-size:12px;line-height:1.6;text-align:center;padding:14px;">' +
+            'No drawable data for this equation.<br/>Check expression parsing or ranges.' +
+            '</div>';
+          return;
+        }
+
+        Plotly.newPlot(container, traces, layout, {
+          responsive: true,
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: ['toImage', 'sendDataToCloud'],
+        });
+      } catch (err) {
+        console.error('Plotly render failed:', err, { plotData, traces, layout });
+        container.innerHTML =
+          '<div style="height:100%;display:flex;align-items:center;justify-content:center;background:#161622;border:1px solid #313244;border-radius:8px;color:#f38ba8;font-size:12px;line-height:1.6;text-align:center;padding:14px;">' +
+          'Plot render failed.<br/>Open Developer Tools console for details.' +
+          '</div>';
+      }
     }
 
     // ========== Badge ==========

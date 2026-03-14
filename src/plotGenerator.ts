@@ -56,7 +56,8 @@ function latexToJs(latex: string): string {
     .replace(/([a-zA-Z])(\d)/g, '$1*$2')
     .replace(/\)\(/g, ')*(')
     .replace(/(\))([a-zA-Z])/g, '$1*$2')
-    .replace(/([a-zA-Z])\(/g, '$1*(');
+    // Keep function calls valid (e.g. Math.sin(x)); avoid forcing implicit multiplication on fn calls.
+    .replace(/\b([xyz])\(/g, '$1*(');
 
   // Fix double-star from implicit multiplication with Math functions
   expr = expr.replace(/Math\.\*/g, 'Math.');

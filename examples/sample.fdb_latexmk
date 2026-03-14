@@ -1,6 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1773467794.5984 "/Users/xiaotongshen/Desktop/github/latex-visualiser/examples/sample.tex" "sample.pdf" "sample" 1773467794.86451 0
-  "/Users/xiaotongshen/Desktop/github/latex-visualiser/examples/sample.tex" 1773467792.86313 1097 3a41bf9a4b0d3429dce2689155e9b56c ""
+["pdflatex"] 1773509883.79226 "/Users/xiaotongshen/Desktop/github/latex-visualiser/examples/sample.tex" "sample.pdf" "sample" 1773509884.13093 0
+  "/Users/xiaotongshen/Desktop/github/latex-visualiser/examples/sample.tex" 1773509883.20094 1099 844c47840ba5f0c4e879ab3e0f1506f4 ""
   "/Users/xiaotongshen/Library/texlive/2026basic/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1773355855 104401 5f36e00aa9d3c28e92fda4a9b0164706 ""
   "/usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1246382020 1004 54797486969f23fa377b128694d548df ""
   "/usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1246382020 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
@@ -34,8 +34,8 @@
   "/usr/local/texlive/2026basic/texmf-dist/web2c/texmf.cnf" 1770478701 43630 e9fa012910491fe5ae08a72c3c2997a7 ""
   "/usr/local/texlive/2026basic/texmf-var/web2c/pdftex/pdflatex.fmt" 1772405612 2966183 588a2f29d0aaf280e3a142a37c2dd621 ""
   "/usr/local/texlive/2026basic/texmf.cnf" 1772405582 628 bbc09d6d38872d53c11bb48dc9b14e88 ""
-  "sample.aux" 1773467794.797 337 a82890fde8852755dfd2400519fcfe15 "pdflatex"
-  "sample.tex" 1773467792.86313 1097 3a41bf9a4b0d3429dce2689155e9b56c ""
+  "sample.aux" 1773509884.064 337 a82890fde8852755dfd2400519fcfe15 "pdflatex"
+  "sample.tex" 1773509883.20094 1099 844c47840ba5f0c4e879ab3e0f1506f4 ""
   (generated)
   "sample.aux"
   "sample.log"
