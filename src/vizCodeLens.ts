@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 /**
- * Provides CodeLens actions above \begin{viz} blocks.
+ * Provides CodeLens actions above \begin{viz} and \begin{proof} blocks.
  */
 export class VizCodeLensProvider implements vscode.CodeLensProvider {
   private _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
@@ -26,6 +26,25 @@ export class VizCodeLensProvider implements vscode.CodeLensProvider {
           title: '◈ Visualize',
           command: 'latexVisualiser.openViewer',
           tooltip: 'Open the LaTeX Visualiser to see this equation',
+        }),
+        new vscode.CodeLens(range, {
+          title: '✦ Suggest Overlay Layer (AI)',
+          command: 'latexVisualiser.suggestOverlayAI',
+          tooltip: 'Attach AI-generated overlay layer directives to this viz block',
+        })
+      );
+    }
+
+    const proofRegex = /\\begin\{proof\}/g;
+    while ((match = proofRegex.exec(text)) !== null) {
+      const pos = document.positionAt(match.index);
+      const range = new vscode.Range(pos, pos);
+
+      lenses.push(
+        new vscode.CodeLens(range, {
+          title: '✨ Suggest Visualization (AI)',
+          command: 'latexVisualiser.suggestVizAI',
+          tooltip: 'Generate a viz block from nearby proof context',
         })
       );
     }

@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.1)  14 MAR 2026 23:44
+=======
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.1)  14 MAR 2026 23:38
+>>>>>>> origin/main
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -378,16 +382,32 @@ Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 48
 File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Live
 ))
 Package pgfplots notification 'compat/show suggested version=true': document has been generated with the most recent feature set (\pgfplotsset{compat=1.18}).
+<<<<<<< HEAD
 
 [1
 
 {/usr/local/texlive/2026basic/texmf-var/fonts/map/pdftex/updmap/pdftex.map}] [2] (./sample.aux)
+=======
+
+[1
+
+{/Users/xiaotongshen/Library/texlive/2026basic/texmf-var/fonts/map/pdftex/updmap/pdftex.map}]
+
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+[2] [3] (./sample.aux)
+>>>>>>> origin/main
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
  ***********
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
  ) 
 Here is how much of TeX's memory you used:
+<<<<<<< HEAD
  22980 strings out of 469006
  611603 string characters out of 5454814
  1188724 words of memory out of 5000000
@@ -400,6 +420,20 @@ Output written on sample.pdf (2 pages, 158837 bytes).
 PDF statistics:
  94 PDF objects out of 1000 (max. 8388607)
  57 compressed objects within 1 object stream
+=======
+ 23685 strings out of 469006
+ 626306 string characters out of 5454814
+ 1539609 words of memory out of 5000000
+ 52046 multiletter control sequences out of 15000+600000
+ 634243 words of font info for 63 fonts, out of 8000000 for 9000
+ 319 hyphenation exceptions out of 8191
+ 102i,11n,107p,788b,2400s stack positions out of 10000i,1000n,20000p,200000b,200000s
+</usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx8.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi9.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr17.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cnts/type1/public/amsfonts/cm/cmr7.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb>
+Output written on sample.pdf (3 pages, 170810 bytes).
+PDF statistics:
+ 92 PDF objects out of 1000 (max. 8388607)
+ 56 compressed objects within 1 object stream
+>>>>>>> origin/main
  0 named destinations out of 1000 (max. 500000)
  13 words of extra memory for PDF output out of 10000 (max. 10000000)
 

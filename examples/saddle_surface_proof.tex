@@ -1,0 +1,43 @@
+\documentclass{article}
+\usepackage{amsmath,amssymb,amsthm}
+\newtheorem{theorem}{Theorem}
+
+\begin{document}
+
+\begin{theorem}
+The function $f(x,y) = x^2 - y^2$ has a saddle point at $(0,0)$.
+\end{theorem}
+
+\begin{proof}
+Consider the function $f(x,y) = x^2 - y^2$. First observe that the gradient of $f$ is
+\[
+\nabla f(x,y) = (2x, -2y).
+\]
+\begin{viz}[type=surface, label=Saddle Point of \(f(x,y) = x^2 - y^2\), xrange=-3:3, yrange=-3:3]
+z = x^2 - y^2
+
+%@layer {"kind":"critical-point","label":"Saddle Point","points":[{"x":0,"y":0,"z":0,"label":"(0,0,0)"}],"style":{"color":"#FF0000","symbol":"diamond","size":9}}\end{viz}
+
+
+Evaluating at $(0,0)$ gives
+\[
+\nabla f(0,0) = (0,0),
+\]
+so $(0,0)$ is a critical point.
+
+To determine the nature of this critical point, examine the function along different directions. Along the line $y = 0$, we have
+\[
+f(x,0) = x^2,
+\]
+which is positive for $x \neq 0$, indicating that the function increases away from the origin in this direction.
+
+However, along the line $x = 0$, we have
+\[
+f(0,y) = -y^2,
+\]
+which is negative for $y \neq 0$, indicating that the function decreases away from the origin in this direction.
+
+Since the function increases in some directions and decreases in others, the point $(0,0)$ is neither a local maximum nor a local minimum. Instead, it is a saddle point. Geometrically, the graph of the function $z = x^2 - y^2$ forms a surface that curves upward in the $x$-direction and downward in the $y$-direction, producing the characteristic saddle shape.
+\end{proof}
+
+\end{document}

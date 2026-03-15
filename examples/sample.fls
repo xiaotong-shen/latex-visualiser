@@ -226,15 +226,28 @@ INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/cm/cmr12.tfm
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/cm/cmbx12.tfm
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm
+<<<<<<< HEAD
+=======
+INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/cm/cmbx8.tfm
+>>>>>>> origin/main
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/cm/cmr9.tfm
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/cm/cmmi9.tfm
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/cm/cmsy9.tfm
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex9.tfm
+<<<<<<< HEAD
+=======
+INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/cm/cmbx10.tfm
+>>>>>>> origin/main
 OUTPUT sample.pdf
 INPUT /usr/local/texlive/2026basic/texmf-var/fonts/map/pdftex/updmap/pdftex.map
 INPUT sample.aux
+INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb
+<<<<<<< HEAD
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmex8.pfb
+=======
+INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx8.pfb
+>>>>>>> origin/main
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi6.pfb
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb
@@ -245,7 +258,12 @@ INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb
+<<<<<<< HEAD
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmr9.pfb
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb
 INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb
+=======
+INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb
+INPUT /usr/local/texlive/2026basic/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb
+>>>>>>> origin/main
