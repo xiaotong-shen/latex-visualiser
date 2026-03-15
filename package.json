@@ -23,6 +23,10 @@
         "title": "LaTeX Visualiser: Open PDF Viewer"
       },
       {
+        "command": "latexVisualiser.generateProofImage",
+        "title": "Generate Proof Image"
+      },
+      {
         "command": "latexVisualiser.refreshViz",
         "title": "LaTeX Visualiser: Refresh Visualizations"
       }
@@ -34,11 +38,23 @@
           "command": "latexVisualiser.openViewer",
           "group": "navigation"
         }
+      ],
+      "editor/context": [
+        {
+          "command": "latexVisualiser.generateProofImage",
+          "when": "editorHasSelection && resourceExtname == .tex",
+          "group": "1_modification"
+        }
       ]
     },
     "configuration": {
       "title": "LaTeX Visualiser",
       "properties": {
+        "latexVisualiser.anthropicApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic API key for Claude-powered proof diagram generation"
+        },
         "latexVisualiser.pdfPath": {
           "type": "string",
           "default": "",
@@ -74,6 +90,8 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "dotenv": "^17.3.1",
     "pdfjs-dist": "^5.5.207",
     "plotly.js-dist-min": "^3.4.0"
   }

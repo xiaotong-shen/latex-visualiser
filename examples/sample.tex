@@ -1,5 +1,8 @@
 \documentclass{article}
 \usepackage{amsmath}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
 
 % Define the viz environment (consumes optional args so they don't render in PDF)
 \newenvironment{viz}[1][]{\begin{equation}}{\end{equation}}
@@ -52,5 +55,103 @@ A Gaussian bump:
 \begin{viz}[type=surface, label=Gaussian, xrange=-3:3, yrange=-3:3, colorscale=Plasma]
 z = \exp(-(x^2 + y^2))
 \end{viz}
+
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}[scale=0.9]
+  
+  % === Paraboloid (3D projection) ===
+  \begin{scope}[shift={(-4.5,3.5)}]
+    \node[font=\bfseries] at (2,3.2) {Paraboloid: $z = x^2 + y^2$};
+    
+    % Draw axes
+    \draw[->,gray] (-0.5,0) -- (3.8,0) node[right,font=\small] {$x$};
+    \draw[->,gray] (0,-0.3) -- (0,3) node[above,font=\small] {$z$};
+    
+    % Draw parabola cross-section (y=0 slice): z = x^2
+    \draw[thick, blue!70!black, domain=-1.65:1.65, samples=80, variable=\x]
+      plot ({1.8+\x},{(\x)^2});
+    
+    % Draw elliptical level curves projected
+    \foreach \h/\op in {0.5/40, 1.0/55, 1.5/65, 2.0/75, 2.5/85} {
+      \draw[red!60!black, opacity=\op/100, thin]
+        (1.8,\h) ellipse ({sqrt(\h)*0.7} and {sqrt(\h)*0.25});
+    }
+    
+    % Label range
+    \node[font=\footnotesize, blue!70!black] at (3.5,2.2) {$x \in [-3,3]$};
+    \node[font=\footnotesize, blue!70!black] at (3.5,1.8) {$y \in [-3,3]$};
+    
+    % Vertex label
+    \fill[blue!70!black] (1.8,0) circle(1.5pt);
+    \node[font=\footnotesize, below] at (1.8,-0.15) {vertex};
+  \end{scope}
+  
+  % === Saddle Surface (3D projection) ===
+  \begin{scope}[shift={(4,3.5)}]
+    \node[font=\bfseries] at (1.5,3.2) {Saddle: $z = x^2 - y^2$};
+    
+    % Draw axes
+    \draw[->,gray] (-0.5,0) -- (3.5,0) node[right,font=\small] {$x$};
+    \draw[->,gray] (1.5,-2.2) -- (1.5,2.8) node[above,font=\small] {$z$};
+    
+    % Parabola opening up (y=0 slice): z = x^2
+    \draw[thick, red!70!black, domain=-1.4:1.4, samples=60, variable=\x]
+      plot ({1.5+\x},{(\x)^2});
+    \node[font=\footnotesize, red!70!black, right] at (3.0,1.5) {$y=0$};
+    
+    % Parabola opening down (x=0 slice): z = -y^2
+    \draw[thick, green!50!black, domain=-1.4:1.4, samples=60, variable=\y]
+      plot ({1.5+\y*0.35},{-(\y)^2});
+    \node[font=\footnotesize, green!50!black, left] at (0.2,-1.5) {$x=0$};
+    
+    % Hyperbolic level curves at z=0 (asymptotic lines)
+    \draw[orange!80!black, dashed, thick, domain=-1.3:1.3, samples=40, variable=\t]
+      plot ({1.5+\t},{\t*0.9});
+    \draw[orange!80!black, dashed, thick, domain=-1.3:1.3, samples=40, variable=\t]
+      plot ({1.5+\t},{-\t*0.9});
+    \node[font=\footnotesize, orange!80!black] at (3.3,-0.6) {$z=0$};
+    
+    % Saddle point
+    \fill[black] (1.5,0) circle(2pt);
+    \node[font=\footnotesize, below right] at (1.55,-0.15) {saddle point};
+    
+    % Range labels
+    \node[font=\footnotesize, gray] at (1.5,-2.7) {$x,y \in [-2,2]$};
+  \end{scope}
+  
+  % === 2D Sine Wave ===
+  \begin{scope}[shift={(-1.5,-2.5)}]
+    \node[font=\bfseries] at (3,2.5) {Classic Sine Wave: $y = \sin(x)$};
+    
+    % Draw axes
+    \draw[->,gray] (-0.5,0) -- (7.5,0) node[right,font=\small] {$x$};
+    \draw[->,gray] (0,-1.8) -- (0,2) node[above,font=\small] {$y$};
+    
+    % Sine curve
+    \draw[very thick, violet!80!black, domain=0:6.9, samples=120, variable=\x]
+      plot ({\x},{1.3*sin(\x*60)});
+    
+    % Key points and labels
+    \foreach \xval/\lab in {0/0, 1.5/\frac{\pi}{2}, 3.0/\pi, 4.5/\frac{3\pi}{2}, 6.0/2\pi} {
+      \draw (\xval,0.08) -- (\xval,-0.08);
+      \node[font=\footnotesize, below] at (\xval,-0.15) {$\lab$};
+    }
+    
+    % Amplitude labels
+    \draw[dashed, gray, thin] (-0.3,1.3) -- (7,1.3);
+    \draw[dashed, gray, thin] (-0.3,-1.3) -- (7,-1.3);
+    \node[font=\footnotesize, left] at (-0.3,1.3) {$1$};
+    \node[font=\footnotesize, left] at (-0.3,-1.3) {$-1$};
+    
+    % Peak/trough markers
+    \fill[violet!80!black] (1.5,1.3) circle(2pt);
+    \fill[violet!80!black] (4.5,-1.3) circle(2pt);
+  \end{scope}
+  
+  \end{tikzpicture}
+  \caption{TODO: Add caption}
+  \label{fig:generated}
+\end{figure}
 
 \end{document}

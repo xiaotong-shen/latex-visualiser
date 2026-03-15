@@ -1,7 +1,11 @@
+
+import * as dotenv from 'dotenv';
 import * as vscode from 'vscode';
 import * as path from 'path';
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 import * as fs from 'fs';
-import { parseVizBlocks, findPdfForTex, estimateVizPositions, VizBlock } from './vizParser';
+import Anthropic from '@anthropic-ai/sdk';
+import { parseVizBlocks, findPdfForTex, estimateVizPositions } from './vizParser';
 import { generateAllPlots } from './plotGenerator';
 import { getWebviewContent } from './webviewContent';
 import { registerVizDecorations } from './vizDecorations';
@@ -10,64 +14,415 @@ import { registerVizCodeLens } from './vizCodeLens';
 let currentPanel: vscode.WebviewPanel | undefined;
 let currentTexDocument: vscode.TextDocument | undefined;
 let fileWatcher: vscode.FileSystemWatcher | undefined;
+let anthropicClient: Anthropic | undefined;
+
+// ── Claude helpers ────────────────────────────────────────────────────────────
+
+
+function getAnthropicClient(): Anthropic {
+  if (anthropicClient) { return anthropicClient; }
+
+  const config = vscode.workspace.getConfiguration('latexVisualiser');
+  let apiKey = config.get<string>('anthropicApiKey');
+  if (!apiKey) { apiKey = process.env.ANTHROPIC_API_KEY; }
+
+  if (!apiKey) {
+    throw new Error(
+      'No Anthropic API key found. Add it to Settings → latexVisualiser.anthropicApiKey or set ANTHROPIC_API_KEY env variable.'
+    );
+  }
+
+  anthropicClient = new Anthropic({ apiKey });
+  return anthropicClient;
+}
+
+function extractTikzCode(response: string): string {
+  const match = response.match(/\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}/);
+  return match ? match[0] : response.trim();
+}
+
+interface ClaudeVizResult {
+  preamble: string;
+  tikzCode: string;
+}
+
+async function generateTikZFromClaude(selectedText: string): Promise<ClaudeVizResult> {
+  const client = getAnthropicClient();
+
+  const message = await client.messages.create({
+    model: 'claude-opus-4-6',
+    max_tokens: 2048,
+    messages: [
+      {
+        role: 'user',
+        content: `You are an expert mathematician and TikZ visualization specialist.
+
+Analyze this LaTeX proof and generate a TikZ diagram:
+\`\`\`latex
+${selectedText}
+\`\`\`
+
+Respond in exactly this format with no extra text:
+
+PREAMBLE:
+\\usepackage{tikz}
+\\usepackage{pgfplots}
+\\pgfplotsset{compat=1.18}
+\\usetikzlibrary{...}
+(only include libraries actually needed)
+
+TIKZ:
+\\begin{tikzpicture}
+...
+\\end{tikzpicture}
+
+Requirements for the TikZ diagram:
+- Use the EXACT variable names from the proof
+- Annotate key mathematical objects defined in the proof
+- 2D only, publication-quality, clean and minimal
+- No explanation, no markdown fences, just the code`,
+      }
+    ],
+  });
+
+  const content = message.content[0];
+  if (content.type !== 'text') { throw new Error('Unexpected response type from Claude'); }
+
+  return parseClaudeResponse(content.text);
+}
+
+function parseClaudeResponse(response: string): ClaudeVizResult {
+  const preambleMatch = response.match(/PREAMBLE:\n([\s\S]*?)\n\nTIKZ:/);
+  const tikzMatch     = response.match(/TIKZ:\n([\s\S]*)/);
+
+  const preamble = preambleMatch ? preambleMatch[1].trim() : '\\usepackage{tikz}\n\\usepackage{pgfplots}\n\\pgfplotsset{compat=1.18}';
+  const tikzCode = tikzMatch
+    ? extractTikzCode(tikzMatch[1].trim())
+    : extractTikzCode(response);
+
+  return { preamble, tikzCode };
+}
+
+function wrapInFigure(tikzCode: string): string {
+  return [
+    '\\begin{figure}[h]',
+    '  \\centering',
+    ...tikzCode.split('\n').map(line => '  ' + line),
+    '  \\caption{TODO: Add caption}',
+    '  \\label{fig:generated}',
+    '\\end{figure}',
+  ].join('\n');
+}
+
+function showInsertPopup(preamble: string, figureCode: string, context: vscode.ExtensionContext) {
+  const panel = vscode.window.createWebviewPanel(
+    'latexProofImage',
+    '◈ Generated Proof Image',
+    vscode.ViewColumn.Beside,
+    { enableScripts: true }
+  );
+
+  const escapedPreamble = escapeHtml(preamble);
+  const escapedFigure   = escapeHtml(figureCode);
+
+  panel.webview.html = /*html*/`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';">
+  <title>Generated Proof Image</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #f9f9f9;
+      color: #1a1a1a;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-height: 100vh;
+    }
+
+    .header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 4px;
+    }
+
+    .header p {
+      font-size: 12px;
+      color: #888;
+      line-height: 1.5;
+    }
+
+    .section {
+      background: #ffffff;
+      border: 1px solid #e4e4e4;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: #f4f4f4;
+      border-bottom: 1px solid #e4e4e4;
+    }
+
+    .section-header .label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .copy-btn {
+      font-size: 11px;
+      color: #6366f1;
+      background: none;
+      border: 1px solid #6366f1;
+      border-radius: 5px;
+      padding: 2px 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+
+    .copy-btn:hover {
+      background: #6366f1;
+      color: white;
+    }
+
+    .copy-btn.copied {
+      background: #22c55e;
+      border-color: #22c55e;
+      color: white;
+    }
+
+    pre {
+      padding: 14px 16px;
+      font-family: 'Fira Code', 'SF Mono', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.65;
+      color: #1a1a1a;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: auto;
+      max-height: 280px;
+    }
+
+    .insert-btn {
+      width: 100%;
+      padding: 10px;
+      background: #6366f1;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      font-family: inherit;
+    }
+
+    .insert-btn:hover { background: #4f46e5; }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #22c55e;
+      color: white;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>◈ Generated Proof Image</h1>
+    <p>Claude generated this TikZ diagram from your selected proof.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="label">Preamble — add to top of your .tex file</span>
+      <button class="copy-btn" onclick="copySection('preamble', this)">Copy</button>
+    </div>
+    <pre id="preamble">${escapedPreamble}</pre>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <span class="label">TikZ Figure — paste where you want the image</span>
+      <button class="copy-btn" onclick="copySection('figure', this)">Copy</button>
+    </div>
+    <pre id="figure">${escapedFigure}</pre>
+  </div>
+
+  <button class="insert-btn" onclick="insertAtCursor()">
+    Insert Figure After Selection in .tex File
+  </button>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const vscode = acquireVsCodeApi();
+
+    function copySection(id, btn) {
+      const text = document.getElementById(id).textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+
+    function insertAtCursor() {
+      vscode.postMessage({ type: 'insertAtCursor' });
+    }
+
+    window.addEventListener('message', function(e) {
+      const toast = document.getElementById('toast');
+      toast.textContent = e.data.text;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2500);
+    });
+  </script>
+</body>
+</html>`;
+
+  panel.webview.onDidReceiveMessage(async message => {
+    if (message.type === 'insertAtCursor') {
+      const editor = vscode.window.visibleTextEditors.find(e => isTexFile(e.document));
+      if (editor) {
+        await editor.edit(eb => eb.insert(editor.selection.end, '\n\n' + figureCode));
+        panel.webview.postMessage({ text: 'Inserted into document ✓' });
+      }
+    }
+  }, undefined, context.subscriptions);
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+
+// ── Activation ────────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('LaTeX Visualiser is now active');
 
-  // Register the open viewer command
   const openViewerCmd = vscode.commands.registerCommand(
     'latexVisualiser.openViewer',
     () => openViewer(context)
   );
 
-  // Register refresh command
   const refreshCmd = vscode.commands.registerCommand(
     'latexVisualiser.refreshViz',
     () => refreshVisualizations()
   );
 
-  // Register editor decorations (highlights viz blocks in the editor)
-  registerVizDecorations(context);
+  // NEW: Generate proof image from selection
+  const generateProofImageCmd = vscode.commands.registerCommand(
+    'latexVisualiser.generateProofImage',
+    () => generateProofImage(context)
+  );
 
-  // Register CodeLens provider (adds "◈ Visualize" buttons above viz blocks)
+  registerVizDecorations(context);
   registerVizCodeLens(context);
 
-  // Watch for active editor changes
   const editorChangeDisposable = vscode.window.onDidChangeActiveTextEditor(editor => {
     if (editor && isTexFile(editor.document)) {
       currentTexDocument = editor.document;
     }
   });
 
-  // Watch for document saves (refresh viz on save)
   const saveDisposable = vscode.workspace.onDidSaveTextDocument(doc => {
     if (isTexFile(doc) && currentPanel) {
       currentTexDocument = doc;
-      // Small delay to allow PDF compilation
       setTimeout(() => refreshVisualizations(), 1500);
     }
   });
 
-  // Set current document if already open
   if (vscode.window.activeTextEditor && isTexFile(vscode.window.activeTextEditor.document)) {
     currentTexDocument = vscode.window.activeTextEditor.document;
   }
 
-  context.subscriptions.push(openViewerCmd, refreshCmd, editorChangeDisposable, saveDisposable);
+  context.subscriptions.push(
+    openViewerCmd,
+    refreshCmd,
+    generateProofImageCmd,
+    editorChangeDisposable,
+    saveDisposable
+  );
 }
+
+// ── Generate Proof Image ──────────────────────────────────────────────────────
+
+async function generateProofImage(context: vscode.ExtensionContext) {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) { return; }
+
+  if (editor.selection.isEmpty) {
+    vscode.window.showWarningMessage(
+      'Select a proof block first, then right-click → Generate Proof Image.'
+    );
+    return;
+  }
+
+  const selectedText = editor.document.getText(editor.selection);
+
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: '◈ LaTeX Visualiser: Generating proof image...',
+      cancellable: false,
+    },
+    async () => {
+      try {
+        const { preamble, tikzCode } = await generateTikZFromClaude(selectedText);
+        const figure = wrapInFigure(tikzCode);
+        showInsertPopup(preamble, figure, context);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`LaTeX Visualiser: ${errMsg}`);
+      }
+    }
+  );
+}
+
+// ── Viewer ────────────────────────────────────────────────────────────────────
 
 function isTexFile(doc: vscode.TextDocument): boolean {
   return doc.languageId === 'latex' || doc.languageId === 'tex' || doc.fileName.endsWith('.tex');
 }
 
 async function openViewer(context: vscode.ExtensionContext) {
-  // Find the .tex file
   if (!currentTexDocument) {
     const editor = vscode.window.activeTextEditor;
     if (editor && isTexFile(editor.document)) {
       currentTexDocument = editor.document;
     } else {
-      // Try to find a .tex file in the workspace
       const texFiles = await vscode.workspace.findFiles('**/*.tex', '**/node_modules/**', 1);
       if (texFiles.length > 0) {
         currentTexDocument = await vscode.workspace.openTextDocument(texFiles[0]);
@@ -87,7 +442,6 @@ async function openViewer(context: vscode.ExtensionContext) {
     );
   }
 
-  // Create or reveal the webview panel
   if (currentPanel) {
     currentPanel.reveal(vscode.ViewColumn.Beside);
   } else {
@@ -108,13 +462,9 @@ async function openViewer(context: vscode.ExtensionContext) {
 
     currentPanel.onDidDispose(() => {
       currentPanel = undefined;
-      if (fileWatcher) {
-        fileWatcher.dispose();
-        fileWatcher = undefined;
-      }
+      if (fileWatcher) { fileWatcher.dispose(); fileWatcher = undefined; }
     });
 
-    // Handle messages from the webview
     currentPanel.webview.onDidReceiveMessage(
       message => handleWebviewMessage(message, context),
       undefined,
@@ -122,58 +472,40 @@ async function openViewer(context: vscode.ExtensionContext) {
     );
   }
 
-  // Set up file watcher for PDF changes
   if (pdfPath && !fileWatcher) {
     fileWatcher = vscode.workspace.createFileSystemWatcher(pdfPath);
     fileWatcher.onDidChange(() => {
-      if (currentPanel) {
-        setTimeout(() => refreshVisualizations(), 500);
-      }
+      if (currentPanel) { setTimeout(() => refreshVisualizations(), 500); }
     });
   }
 
-  // Load the webview
   await loadWebview(context, pdfPath);
 }
 
 async function loadWebview(context: vscode.ExtensionContext, pdfPath: string | undefined) {
-  if (!currentPanel || !currentTexDocument) {return;}
+  if (!currentPanel || !currentTexDocument) { return; }
 
-  const texText = currentTexDocument.getText();
-  const blocks = parseVizBlocks(texText);
+  const texText     = currentTexDocument.getText();
+  const blocks      = parseVizBlocks(texText);
+  const config      = vscode.workspace.getConfiguration('latexVisualiser');
+  const resolution  = config.get<number>('plotResolution') || 50;
+  const popupWidth  = config.get<number>('popupWidth')     || 450;
+  const popupHeight = config.get<number>('popupHeight')    || 400;
+  const plots       = generateAllPlots(blocks, resolution);
 
-  // Get the config
-  const config = vscode.workspace.getConfiguration('latexVisualiser');
-  const resolution = config.get<number>('plotResolution') || 50;
-  const popupWidth = config.get<number>('popupWidth') || 450;
-  const popupHeight = config.get<number>('popupHeight') || 400;
-
-  // Generate plot data
-  const plots = generateAllPlots(blocks, resolution);
-
-  // Read PDF as base64 if available
   let pdfBase64: string | undefined;
   if (pdfPath && fs.existsSync(pdfPath)) {
-    const pdfBuffer = fs.readFileSync(pdfPath);
-    pdfBase64 = pdfBuffer.toString('base64');
+    pdfBase64 = fs.readFileSync(pdfPath).toString('base64');
   }
 
-  // Estimate positions
   const totalLines = texText.split('\n').length;
-  const markers = estimateVizPositions(blocks, totalLines, Math.max(1, Math.ceil(totalLines / 50)));
+  const markers    = estimateVizPositions(blocks, totalLines, Math.max(1, Math.ceil(totalLines / 50)));
 
-  // Generate the HTML content
-  const pdfjsScriptUri = currentPanel.webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.min.mjs')
-  ).toString();
-  const pdfjsWorkerUri = currentPanel.webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs')
-  ).toString();
-  const plotlyScriptUri = currentPanel.webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'plotly.js-dist-min', 'plotly.min.js')
-  ).toString();
+  const pdfjsScriptUri  = currentPanel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.min.mjs')).toString();
+  const pdfjsWorkerUri  = currentPanel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs')).toString();
+  const plotlyScriptUri = currentPanel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'plotly.js-dist-min', 'plotly.min.js')).toString();
 
-  const html = getWebviewContent({
+  currentPanel.webview.html = getWebviewContent({
     pdfBase64,
     pdfjsScriptUri,
     pdfjsWorkerUri,
@@ -183,39 +515,33 @@ async function loadWebview(context: vscode.ExtensionContext, pdfPath: string | u
     config: { popupWidth, popupHeight, resolution },
     cspSource: currentPanel.webview.cspSource,
   });
-
-  currentPanel.webview.html = html;
 }
 
+// ── Refresh ───────────────────────────────────────────────────────────────────
+
 function refreshVisualizations() {
-  if (!currentPanel || !currentTexDocument) {return;}
+  if (!currentPanel || !currentTexDocument) { return; }
 
-  const texText = currentTexDocument.getText();
-  const blocks = parseVizBlocks(texText);
-  const config = vscode.workspace.getConfiguration('latexVisualiser');
+  const texText    = currentTexDocument.getText();
+  const blocks     = parseVizBlocks(texText);
+  const config     = vscode.workspace.getConfiguration('latexVisualiser');
   const resolution = config.get<number>('plotResolution') || 50;
-  const plots = generateAllPlots(blocks, resolution);
-
+  const plots      = generateAllPlots(blocks, resolution);
   const totalLines = texText.split('\n').length;
-  const markers = estimateVizPositions(blocks, totalLines, Math.max(1, Math.ceil(totalLines / 50)));
+  const markers    = estimateVizPositions(blocks, totalLines, Math.max(1, Math.ceil(totalLines / 50)));
 
-  // Send updated data to the webview
-  currentPanel.webview.postMessage({
-    type: 'updateViz',
-    plots,
-    markers,
-  });
+  currentPanel.webview.postMessage({ type: 'updateViz', plots, markers });
 
-  // Also reload PDF if available
   const pdfPath = findPdfForTex(currentTexDocument.uri.fsPath);
   if (pdfPath && fs.existsSync(pdfPath)) {
-    const pdfBuffer = fs.readFileSync(pdfPath);
     currentPanel.webview.postMessage({
       type: 'updatePdf',
-      pdfBase64: pdfBuffer.toString('base64'),
+      pdfBase64: fs.readFileSync(pdfPath).toString('base64'),
     });
   }
 }
+
+// ── Message handler ───────────────────────────────────────────────────────────
 
 function handleWebviewMessage(message: any, context: vscode.ExtensionContext) {
   switch (message.type) {
@@ -230,7 +556,7 @@ function handleWebviewMessage(message: any, context: vscode.ExtensionContext) {
       break;
     case 'openTexLine':
       if (currentTexDocument && typeof message.line === 'number') {
-        const line = Math.max(0, message.line - 1);
+        const line  = Math.max(0, message.line - 1);
         const range = new vscode.Range(line, 0, line, 0);
         vscode.window.showTextDocument(currentTexDocument, {
           selection: range,
@@ -241,8 +567,8 @@ function handleWebviewMessage(message: any, context: vscode.ExtensionContext) {
   }
 }
 
+// ── Deactivate ────────────────────────────────────────────────────────────────
+
 export function deactivate() {
-  if (fileWatcher) {
-    fileWatcher.dispose();
-  }
+  if (fileWatcher) { fileWatcher.dispose(); }
 }
