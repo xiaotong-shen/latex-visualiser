@@ -28,6 +28,101 @@ A saddle surface:
 z = x^2 - y^2
 \end{viz}
 
+\begin{figure}[h]
+  \centering
+  \begin{tikzpicture}
+  \begin{axis}[
+      title={Saddle Surface: $z = x^2 - y^2$},
+      xlabel={$x$},
+      ylabel={$y$},
+      zlabel={$z$},
+      xmin=-2, xmax=2,
+      ymin=-2, ymax=2,
+      zmin=-4, zmax=4,
+      view={45}{35},
+      colormap/cool,
+      surf/.style={
+          shader=faceted interp,
+          opacity=0.85,
+          faceted color=black!40,
+          samples=35,
+      },
+      axis lines=center,
+      axis line style={->,thick,black!70},
+      tick label style={font=\footnotesize},
+      label style={font=\small},
+      title style={font=\normalsize\bfseries, yshift=5pt},
+      width=12cm,
+      height=10cm,
+      grid=major,
+      grid style={line width=0.2pt, draw=gray!30},
+  ]
+      % Main saddle surface z = x^2 - y^2
+      \addplot3[
+          surf,
+          domain=-2:2,
+          domain y=-2:2,
+          samples=35,
+      ] {x^2 - y^2};
+  
+      % Contour line z=0: x^2 = y^2, i.e., y = x and y = -x
+      \addplot3[
+          thick,
+          color=red!80!black,
+          samples=60,
+          domain=-2:2,
+          samples y=0,
+      ] ({x},{x},{0});
+      \addplot3[
+          thick,
+          color=red!80!black,
+          samples=60,
+          domain=-2:2,
+          samples y=0,
+      ] ({x},{-x},{0});
+  
+      % Mark the saddle point at the origin
+      \addplot3[
+          only marks,
+          mark=*,
+          mark size=3pt,
+          color=black,
+      ] coordinates {(0,0,0)};
+  
+      % Annotation for saddle point
+      \node[anchor=south west, font=\footnotesize\bfseries] at (axis cs:0.15,0.15,0.4) {Saddle point $(0,0,0)$};
+  
+      % Parabola along x-axis (y=0): z = x^2
+      \addplot3[
+          ultra thick,
+          color=blue!80!black,
+          samples=60,
+          domain=-2:2,
+          samples y=0,
+      ] ({x},{0},{x^2});
+  
+      % Parabola along y-axis (x=0): z = -y^2
+      \addplot3[
+          ultra thick,
+          color=orange!80!black,
+          samples=60,
+          domain=-2:2,
+          samples y=0,
+      ] ({0},{x},{-x^2});
+  
+      % Annotations for cross-sections
+      \node[anchor=west, font=\footnotesize, color=blue!80!black] at (axis cs:1.8,0,3.5) {$z=x^2$\, ($y\!=\!0$)};
+      \node[anchor=east, font=\footnotesize, color=orange!80!black] at (axis cs:0,-1.8,-3.5) {$z=-y^2$\, ($x\!=\!0$)};
+  
+      % Zero contour annotation
+      \node[anchor=south, font=\footnotesize, color=red!80!black] at (axis cs:1.7,1.7,0.3) {$z=0$};
+  
+  \end{axis}
+  \end{tikzpicture}
+  \caption{TODO: Add caption}
+  \label{fig:generated}
+\end{figure}
+
 \section{2D Curves}
 
 The classic sine wave:

@@ -1,0 +1,6 @@
+{
+  "latexVisualiser.aiProvider": "openaiCompatible",
+  "latexVisualiser.aiBaseUrl": "https://api.openai.com/v1",
+  "latexVisualiser.aiModel": "gpt-4.1-mini",
+  "latexVisualiser.aiApiKey": ""
+}

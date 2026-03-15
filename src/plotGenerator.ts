@@ -1,4 +1,4 @@
-import { VizBlock } from './vizParser';
+import { VizBlock, VizLayer, VizLayerPoint } from './vizParser';
 
 /**
  * Represents Plotly-compatible plot data to send to the webview.
@@ -99,22 +99,25 @@ function generateSurfacePlot(block: VizBlock, jsExpr: string, resolution: number
 
   // We'll send the expression to the webview for evaluation
   // This is safer and allows real-time interactivity
+  const data = [{
+    type: block.vizType === 'contour' ? 'contour' : 'surface',
+    _expression: jsExpr,
+    _xRange: xRange,
+    _yRange: yRange,
+    _resolution: resolution,
+    colorscale: block.params['colorscale'] || 'Viridis',
+    opacity: 0.9,
+    contours: {
+      z: { show: true, usecolormap: true, highlightcolor: "#42f5e3", project: { z: true } }
+    }
+  }];
+  data.push(...buildLayerTraces(block.layers, 'surface'));
+
   return {
     type: block.vizType === 'contour' ? 'contour' : 'surface',
     equation: block.equation,
     label: block.label,
-    data: [{
-      type: block.vizType === 'contour' ? 'contour' : 'surface',
-      _expression: jsExpr,
-      _xRange: xRange,
-      _yRange: yRange,
-      _resolution: resolution,
-      colorscale: block.params['colorscale'] || 'Viridis',
-      opacity: 0.9,
-      contours: {
-        z: { show: true, usecolormap: true, highlightcolor: "#42f5e3", project: { z: true } }
-      }
-    }],
+    data,
     layout: {
       title: block.label || block.equation,
       autosize: true,
@@ -135,19 +138,21 @@ function generateSurfacePlot(block: VizBlock, jsExpr: string, resolution: number
 
 function generateCurvePlot(block: VizBlock, jsExpr: string, resolution: number): PlotData {
   const xRange = parseRange(block.params['xrange'], [-5, 5]);
+  const data = [{
+    type: 'scatter',
+    mode: 'lines',
+    _expression: jsExpr,
+    _xRange: xRange,
+    _resolution: resolution * 4,
+    line: { color: '#6366f1', width: 3 }
+  }];
+  data.push(...buildLayerTraces(block.layers, 'curve'));
 
   return {
     type: 'scatter',
     equation: block.equation,
     label: block.label,
-    data: [{
-      type: 'scatter',
-      mode: 'lines',
-      _expression: jsExpr,
-      _xRange: xRange,
-      _resolution: resolution * 4,
-      line: { color: '#6366f1', width: 3 }
-    }],
+    data,
     layout: {
       title: block.label || block.equation,
       autosize: true,
@@ -162,20 +167,22 @@ function generateCurvePlot(block: VizBlock, jsExpr: string, resolution: number):
 
 function generateParametricPlot(block: VizBlock, jsExpr: string, resolution: number): PlotData {
   const tRange = parseRange(block.params['trange'], [0, 6.28318]);
+  const data = [{
+    type: 'scatter',
+    mode: 'lines',
+    _expression: jsExpr,
+    _tRange: tRange,
+    _resolution: resolution * 4,
+    _parametric: true,
+    line: { color: '#f59e0b', width: 3 }
+  }];
+  data.push(...buildLayerTraces(block.layers, 'curve'));
 
   return {
     type: 'scatter',
     equation: block.equation,
     label: block.label,
-    data: [{
-      type: 'scatter',
-      mode: 'lines',
-      _expression: jsExpr,
-      _tRange: tRange,
-      _resolution: resolution * 4,
-      _parametric: true,
-      line: { color: '#f59e0b', width: 3 }
-    }],
+    data,
     layout: {
       title: block.label || block.equation,
       autosize: true,
@@ -193,4 +200,72 @@ function generateParametricPlot(block: VizBlock, jsExpr: string, resolution: num
  */
 export function generateAllPlots(blocks: VizBlock[], resolution: number = 50): PlotData[] {
   return blocks.map(block => generatePlotData(block, resolution));
+}
+
+function buildLayerTraces(layers: VizLayer[], mode: 'surface' | 'curve'): any[] {
+  const traces: any[] = [];
+
+  for (const layer of layers) {
+    const points = layer.points.filter(p => isPointValid(p, mode));
+    if (points.length === 0) {
+      continue;
+    }
+
+    const color = layer.style?.color || (layer.kind === 'critical-point' ? '#f59e0b' : '#94e2d5');
+    const symbol = layer.style?.symbol || (layer.kind === 'critical-point' ? 'diamond' : 'circle');
+    const size = layer.style?.size || (layer.kind === 'critical-point' ? 9 : 8);
+
+    if (mode === 'surface') {
+      traces.push({
+        type: 'scatter3d',
+        mode: points.some(p => p.label) ? 'markers+text' : 'markers',
+        x: points.map(p => p.x),
+        y: points.map(p => p.y),
+        z: points.map(p => p.z),
+        text: points.map(p => p.label || ''),
+        textposition: 'top center',
+        textfont: { color },
+        marker: {
+          color,
+          size,
+          symbol,
+          line: { color: '#11111b', width: 1 },
+        },
+        hovertemplate: layer.label ? `${layer.label}<extra></extra>` : undefined,
+        name: layer.label || layer.kind,
+        showlegend: false,
+      });
+    } else {
+      traces.push({
+        type: 'scatter',
+        mode: points.some(p => p.label) ? 'markers+text' : 'markers',
+        x: points.map(p => p.x),
+        y: points.map(p => p.y),
+        text: points.map(p => p.label || ''),
+        textposition: 'top center',
+        textfont: { color },
+        marker: {
+          color,
+          size,
+          symbol,
+          line: { color: '#11111b', width: 1 },
+        },
+        hovertemplate: layer.label ? `${layer.label}<extra></extra>` : undefined,
+        name: layer.label || layer.kind,
+        showlegend: false,
+      });
+    }
+  }
+
+  return traces;
+}
+
+function isPointValid(point: VizLayerPoint, mode: 'surface' | 'curve'): boolean {
+  if (!Number.isFinite(point.x)) {
+    return false;
+  }
+  if (mode === 'surface') {
+    return Number.isFinite(point.y) && Number.isFinite(point.z);
+  }
+  return Number.isFinite(point.y);
 }

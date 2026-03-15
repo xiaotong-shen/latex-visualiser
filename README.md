@@ -12,6 +12,8 @@ Open your compiled PDF alongside your `.tex` file. Hover over any `\begin{viz}..
 ### 📝 Editor Integration
 - **Syntax highlighting** — viz blocks are highlighted with a purple left border
 - **CodeLens** — clickable "◈ Visualize" buttons appear above each viz block
+- **AI suggestion** — clickable "✨ Suggest Visualization (AI)" appears above proof blocks
+- **AI overlays** — clickable "✦ Suggest Overlay Layer (AI)" appears above viz blocks
 - **Go to source** — click through from the visualization popup back to the source line
 
 ### 📊 Visualization Types
@@ -68,6 +70,58 @@ y = \sin(x)
 
 Then run the command **LaTeX Visualiser: Open PDF Viewer** (`Cmd+Shift+P` → search for it).
 
+## AI Suggestion (MVP)
+
+Use the CodeLens action above a proof block:
+
+- `✨ Suggest Visualization (AI)`
+
+The extension extracts nearby proof context and inserts one `\\begin{viz}...\\end{viz}` block at your cursor.
+
+### AI Overlay Layers (Option A)
+
+Use the CodeLens action above a viz block:
+
+- `✦ Suggest Overlay Layer (AI)`
+
+The extension inserts one or more inline overlay directives inside the nearest viz block. Format:
+
+```latex
+%@layer {"kind":"critical-point","label":"Saddle point","points":[{"x":0,"y":0,"z":0,"label":"(0,0,0)"}],"style":{"color":"#f59e0b","symbol":"diamond","size":10}}
+```
+
+These directives are parsed as overlay traces and rendered on top of the base plot.
+
+### Provider Modes
+
+- `mock` (default): deterministic local suggestion, no API call
+- `openaiCompatible`: calls an OpenAI-style chat completions endpoint
+
+If `openaiCompatible` fails or times out, the extension automatically falls back to `mock`.
+
+### Hackathon OSS Endpoint Setup
+
+Set these extension settings:
+
+- `latexVisualiser.aiProvider`: `openaiCompatible`
+- `latexVisualiser.aiBaseUrl`: `https://vjioo4r1vyvcozuj.us-east-2.aws.endpoints.huggingface.cloud/v1`
+- `latexVisualiser.aiModel`: `openai/gpt-oss-120b`
+- `latexVisualiser.aiApiKey`: optional (or set `OPENAI_API_KEY` in your environment, otherwise `test` is used)
+
+Optional:
+
+- `latexVisualiser.aiTimeoutMs`: request timeout (default `8000`)
+
+You can also set the API key in a local `.env` file at the project root:
+
+```dotenv
+OPENAI_API_KEY=your_api_key_here
+```
+
+You can start from `.env.example` and keep your real key in `.env`.
+
+The extension loads `.env` on activation and uses `OPENAI_API_KEY` automatically when `latexVisualiser.aiApiKey` is empty.
+
 ## Viz Block Syntax
 
 ```latex
@@ -107,6 +161,11 @@ The parser understands common LaTeX math notation:
 | `latexVisualiser.plotResolution` | Grid resolution for surface plots | `50` |
 | `latexVisualiser.popupWidth` | Popup width in pixels | `450` |
 | `latexVisualiser.popupHeight` | Popup height in pixels | `400` |
+| `latexVisualiser.aiProvider` | AI provider mode (`mock` or `openaiCompatible`) | `mock` |
+| `latexVisualiser.aiBaseUrl` | OpenAI-compatible API base URL | `https://.../v1` |
+| `latexVisualiser.aiModel` | Model id for OpenAI-compatible mode | `openai/gpt-oss-120b` |
+| `latexVisualiser.aiApiKey` | Optional API key override | `""` |
+| `latexVisualiser.aiTimeoutMs` | AI request timeout in milliseconds | `8000` |
 
 ## Architecture
 

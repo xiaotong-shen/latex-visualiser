@@ -1,3 +1,17 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% Define the viz environment (consumes optional args so they don't render in PDF)
+\newenvironment{viz}[1][]{\begin{equation}}{\end{equation}}
+
+\begin{document}
+
+\title{LaTeX Visualiser Demo}
+\author{Demo}
+\date{}
+
+
 The two-sided cone $S=\{(x,y,z)\in\mathbb{R}^3:x^2+y^2=z^2,-2\leq z\leq2\}$ is parametrized by the cylindrical coordinates $\max G:[0,2\pi]\times[-2,2]\to\mathbb{R}^3$ given by
 $$G(s,t)=(t\cos s,t\sin s,t).$$
 
@@ -18,6 +32,10 @@ The map $G_1:U_1\to\mathbb{R}^3$ given by $U_1=[0,2\pi]\times[0,2]$ and $G_1(s,t
 
 is a simple smooth regular parametrization of $S_1$ and hence $S_1$ is a surface.
 
+\begin{viz}[type=curve, label=AI Suggested Curve, xrange=-6:6, yrange=-2:2]
+y = sin(x)
+\end{viz}
+
 $\bullet$ Define the lower cone
 
 $$S_2=\{(x,y,z)\in\mathbb{R}^3:x^2+y^2=z^2,-2\leq z\leq0\}.$$
@@ -32,3 +50,5 @@ $$S_1\cap S_2=G_1(\partial U_1)\cap G_2(\partial U_2).$$
 The surfaces $S_1$ and $S_2$ are "glued along their parametrization's domain boundaries"
 
 % courtesy of MAT237 text book
+
+\end{document}

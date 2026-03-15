@@ -1,20 +1,71 @@
 
-import * as dotenv from 'dotenv';
 import * as vscode from 'vscode';
 import * as path from 'path';
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
 import * as fs from 'fs';
 import Anthropic from '@anthropic-ai/sdk';
-import { parseVizBlocks, findPdfForTex, estimateVizPositions } from './vizParser';
+import dotenv from 'dotenv';
+import { parseVizBlocks, findPdfForTex, estimateVizPositions, VizBlock } from './vizParser';
 import { generateAllPlots } from './plotGenerator';
 import { getWebviewContent } from './webviewContent';
 import { registerVizDecorations } from './vizDecorations';
 import { registerVizCodeLens } from './vizCodeLens';
+import { extractSuggestionContext } from './proofContext';
+import { createAiSuggestionService } from './aiSuggestionService';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 let currentTexDocument: vscode.TextDocument | undefined;
 let fileWatcher: vscode.FileSystemWatcher | undefined;
 let anthropicClient: Anthropic | undefined;
+
+function loadEnvironmentVariables(context: vscode.ExtensionContext): void {
+  const candidatePaths: string[] = [];
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+
+  if (workspaceFolder) {
+    candidatePaths.push(path.join(workspaceFolder.uri.fsPath, '.env'));
+  }
+
+  candidatePaths.push(path.join(context.extensionPath, '.env'));
+
+  for (const envPath of candidatePaths) {
+    if (!fs.existsSync(envPath)) {
+      continue;
+    }
+
+    const result = dotenv.config({ path: envPath, override: false });
+    if (result.error) {
+      console.warn(`Failed to load .env from ${envPath}: ${result.error.message}`);
+      continue;
+    }
+
+    console.log(`Loaded environment variables from ${envPath}`);
+    return;
+  }
+}
+
+function findNearestVizBlock(blocks: VizBlock[], cursorOffset: number): VizBlock | undefined {
+  if (blocks.length === 0) {
+    return undefined;
+  }
+
+  let best: VizBlock | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const block of blocks) {
+    const distance = cursorOffset < block.startOffset
+      ? block.startOffset - cursorOffset
+      : cursorOffset > block.endOffset
+        ? cursorOffset - block.endOffset
+        : 0;
+
+    if (distance < bestDistance) {
+      best = block;
+      bestDistance = distance;
+    }
+  }
+
+  return best;
+}
 
 // ── Claude helpers ────────────────────────────────────────────────────────────
 
@@ -330,7 +381,9 @@ function escapeHtml(s: string): string {
 // ── Activation ────────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
+  loadEnvironmentVariables(context);
   console.log('LaTeX Visualiser is now active');
+  const suggestionService = createAiSuggestionService();
 
   const openViewerCmd = vscode.commands.registerCommand(
     'latexVisualiser.openViewer',
@@ -342,10 +395,103 @@ export function activate(context: vscode.ExtensionContext) {
     () => refreshVisualizations()
   );
 
-  // NEW: Generate proof image from selection
   const generateProofImageCmd = vscode.commands.registerCommand(
     'latexVisualiser.generateProofImage',
     () => generateProofImage(context)
+  );
+
+  const suggestVizCmd = vscode.commands.registerCommand(
+    'latexVisualiser.suggestVizAI',
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !isTexFile(editor.document)) {
+        vscode.window.showErrorMessage('Open a .tex file to use AI visualization suggestions.');
+        return;
+      }
+
+      const contextData = extractSuggestionContext(editor.document, editor.selection);
+
+      try {
+        const result = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: 'LaTeX Visualiser: Generating visualization suggestion',
+            cancellable: false,
+          },
+          async () => suggestionService.suggestVizBlock(contextData)
+        );
+
+        const insertPosition = editor.selection.active;
+        const blockToInsert = `\n${result.vizBlock}\n`;
+        const ok = await editor.edit(editBuilder => {
+          editBuilder.insert(insertPosition, blockToInsert);
+        });
+
+        if (!ok) {
+          vscode.window.showErrorMessage('Failed to insert generated viz block.');
+          return;
+        }
+
+        if (result.usedFallback) {
+          vscode.window.showWarningMessage('OSS provider unavailable. Inserted mock AI suggestion instead.');
+        } else {
+          vscode.window.showInformationMessage(`Inserted AI visualization suggestion via ${result.provider}.`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        vscode.window.showErrorMessage(`Failed to generate suggestion: ${message}`);
+      }
+    }
+  );
+
+  const suggestOverlayCmd = vscode.commands.registerCommand(
+    'latexVisualiser.suggestOverlayAI',
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !isTexFile(editor.document)) {
+        vscode.window.showErrorMessage('Open a .tex file to generate overlay layers.');
+        return;
+      }
+
+      const blocks = parseVizBlocks(editor.document.getText());
+      const targetBlock = findNearestVizBlock(blocks, editor.document.offsetAt(editor.selection.active));
+      if (!targetBlock) {
+        vscode.window.showErrorMessage('No viz block found near cursor to attach overlay layers.');
+        return;
+      }
+
+      const contextData = extractSuggestionContext(editor.document, editor.selection);
+      try {
+        const result = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: 'LaTeX Visualiser: Generating overlay layers',
+            cancellable: false,
+          },
+          async () => suggestionService.suggestOverlayLayers(contextData)
+        );
+
+        const insertionText = `\n${result.directives.join('\n')}`;
+        const insertPosition = editor.document.positionAt(targetBlock.endTagOffset);
+        const ok = await editor.edit(editBuilder => {
+          editBuilder.insert(insertPosition, insertionText);
+        });
+
+        if (!ok) {
+          vscode.window.showErrorMessage('Failed to insert generated overlay directives.');
+          return;
+        }
+
+        if (result.usedFallback) {
+          vscode.window.showWarningMessage('OSS provider unavailable. Inserted mock overlay layers instead.');
+        } else {
+          vscode.window.showInformationMessage(`Inserted AI overlay layer directives via ${result.provider}.`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        vscode.window.showErrorMessage(`Failed to generate overlay layers: ${message}`);
+      }
+    }
   );
 
   registerVizDecorations(context);
@@ -372,6 +518,8 @@ export function activate(context: vscode.ExtensionContext) {
     openViewerCmd,
     refreshCmd,
     generateProofImageCmd,
+    suggestVizCmd,
+    suggestOverlayCmd,
     editorChangeDisposable,
     saveDisposable
   );

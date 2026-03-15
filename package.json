@@ -29,6 +29,14 @@
       {
         "command": "latexVisualiser.refreshViz",
         "title": "LaTeX Visualiser: Refresh Visualizations"
+      },
+      {
+        "command": "latexVisualiser.suggestVizAI",
+        "title": "LaTeX Visualiser: Suggest Visualization (AI)"
+      },
+      {
+        "command": "latexVisualiser.suggestOverlayAI",
+        "title": "LaTeX Visualiser: Suggest Overlay Layer (AI)"
       }
     ],
     "menus": {
@@ -74,6 +82,39 @@
           "type": "number",
           "default": 400,
           "description": "Height of the visualization popup in pixels"
+        },
+        "latexVisualiser.aiProvider": {
+          "type": "string",
+          "enum": [
+            "openaiCompatible"
+          ],
+          "default": "openaiCompatible",
+          "description": "AI suggestion provider. This extension is configured to always use OpenAI-compatible chat completions."
+        },
+        "latexVisualiser.aiBaseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "Base URL for the OpenAI-compatible API provider."
+        },
+        "latexVisualiser.aiModel": {
+          "type": "string",
+          "default": "gpt-4.1-mini",
+          "description": "OpenAI model id used for chat completions."
+        },
+        "latexVisualiser.aiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI-compatible API key override (falls back to OPENAI_API_KEY, then 'test')."
+        },
+        "latexVisualiser.aiTimeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "description": "Request timeout in milliseconds for AI provider calls."
+        },
+        "latexVisualiser.aiDebugLogs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose AI logs (prompt, provider, model, raw response) in the 'LaTeX Visualiser AI' output channel."
         }
       }
     }
