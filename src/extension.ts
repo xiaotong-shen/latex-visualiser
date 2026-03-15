@@ -1,37 +1,39 @@
-
 import * as dotenv from 'dotenv';
-import * as vscode from 'vscode';
 import * as path from 'path';
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as os from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import Anthropic from '@anthropic-ai/sdk';
 import { parseVizBlocks, findPdfForTex, estimateVizPositions } from './vizParser';
 import { generateAllPlots } from './plotGenerator';
 import { getWebviewContent } from './webviewContent';
 import { registerVizDecorations } from './vizDecorations';
 import { registerVizCodeLens } from './vizCodeLens';
+import { getChatPanelHtml } from './chatPanel';
+
+const execFileAsync = promisify(execFile);
+const outputChannel = vscode.window.createOutputChannel('LaTeX Visualiser');
 
 let currentPanel: vscode.WebviewPanel | undefined;
+let currentChatPanel: vscode.WebviewPanel | undefined;
 let currentTexDocument: vscode.TextDocument | undefined;
 let fileWatcher: vscode.FileSystemWatcher | undefined;
 let anthropicClient: Anthropic | undefined;
 
 // ── Claude helpers ────────────────────────────────────────────────────────────
 
-
 function getAnthropicClient(): Anthropic {
   if (anthropicClient) { return anthropicClient; }
-
   const config = vscode.workspace.getConfiguration('latexVisualiser');
   let apiKey = config.get<string>('anthropicApiKey');
   if (!apiKey) { apiKey = process.env.ANTHROPIC_API_KEY; }
-
   if (!apiKey) {
-    throw new Error(
-      'No Anthropic API key found. Add it to Settings → latexVisualiser.anthropicApiKey or set ANTHROPIC_API_KEY env variable.'
-    );
+    throw new Error('No Anthropic API key found. Set latexVisualiser.anthropicApiKey or ANTHROPIC_API_KEY env variable.');
   }
-
   anthropicClient = new Anthropic({ apiKey });
   return anthropicClient;
 }
@@ -48,14 +50,12 @@ interface ClaudeVizResult {
 
 async function generateTikZFromClaude(selectedText: string): Promise<ClaudeVizResult> {
   const client = getAnthropicClient();
-
   const message = await client.messages.create({
     model: 'claude-opus-4-6',
     max_tokens: 2048,
-    messages: [
-      {
-        role: 'user',
-        content: `You are an expert mathematician and TikZ visualization specialist.
+    messages: [{
+      role: 'user',
+      content: `You are an expert mathematician and TikZ visualization specialist.
 
 Analyze this LaTeX proof and generate a TikZ diagram:
 \`\`\`latex
@@ -76,30 +76,30 @@ TIKZ:
 ...
 \\end{tikzpicture}
 
-Requirements for the TikZ diagram:
+Requirements:
 - Use the EXACT variable names from the proof
 - Annotate key mathematical objects defined in the proof
-- 2D only, publication-quality, clean and minimal
+- 2D diagrams ONLY — no 3D surf plots, no pgfplots 3D axes
+- Use basic tikz drawing commands: \\draw, \\node, \\fill, \\arrow
+- NO custom colormaps, NO shader options, NO z buffer options
+- Publication-quality, clean and minimal
 - No explanation, no markdown fences, just the code`,
-      }
-    ],
+    }],
   });
-
   const content = message.content[0];
   if (content.type !== 'text') { throw new Error('Unexpected response type from Claude'); }
-
   return parseClaudeResponse(content.text);
 }
 
 function parseClaudeResponse(response: string): ClaudeVizResult {
   const preambleMatch = response.match(/PREAMBLE:\n([\s\S]*?)\n\nTIKZ:/);
   const tikzMatch     = response.match(/TIKZ:\n([\s\S]*)/);
-
-  const preamble = preambleMatch ? preambleMatch[1].trim() : '\\usepackage{tikz}\n\\usepackage{pgfplots}\n\\pgfplotsset{compat=1.18}';
+  const preamble = preambleMatch
+    ? preambleMatch[1].trim()
+    : '\\usepackage{tikz}\n\\usepackage{pgfplots}\n\\pgfplotsset{compat=1.18}';
   const tikzCode = tikzMatch
     ? extractTikzCode(tikzMatch[1].trim())
     : extractTikzCode(response);
-
   return { preamble, tikzCode };
 }
 
@@ -114,210 +114,6 @@ function wrapInFigure(tikzCode: string): string {
   ].join('\n');
 }
 
-function showInsertPopup(preamble: string, figureCode: string, context: vscode.ExtensionContext) {
-  const panel = vscode.window.createWebviewPanel(
-    'latexProofImage',
-    '◈ Generated Proof Image',
-    vscode.ViewColumn.Beside,
-    { enableScripts: true }
-  );
-
-  const escapedPreamble = escapeHtml(preamble);
-  const escapedFigure   = escapeHtml(figureCode);
-
-  panel.webview.html = /*html*/`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';">
-  <title>Generated Proof Image</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      background: #f9f9f9;
-      color: #1a1a1a;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      padding: 28px 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      min-height: 100vh;
-    }
-
-    .header h1 {
-      font-size: 15px;
-      font-weight: 600;
-      color: #1a1a1a;
-      margin-bottom: 4px;
-    }
-
-    .header p {
-      font-size: 12px;
-      color: #888;
-      line-height: 1.5;
-    }
-
-    .section {
-      background: #ffffff;
-      border: 1px solid #e4e4e4;
-      border-radius: 10px;
-      overflow: hidden;
-    }
-
-    .section-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 14px;
-      background: #f4f4f4;
-      border-bottom: 1px solid #e4e4e4;
-    }
-
-    .section-header .label {
-      font-size: 11px;
-      font-weight: 600;
-      color: #555;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .copy-btn {
-      font-size: 11px;
-      color: #6366f1;
-      background: none;
-      border: 1px solid #6366f1;
-      border-radius: 5px;
-      padding: 2px 10px;
-      cursor: pointer;
-      transition: all 0.15s;
-      font-family: inherit;
-    }
-
-    .copy-btn:hover {
-      background: #6366f1;
-      color: white;
-    }
-
-    .copy-btn.copied {
-      background: #22c55e;
-      border-color: #22c55e;
-      color: white;
-    }
-
-    pre {
-      padding: 14px 16px;
-      font-family: 'Fira Code', 'SF Mono', 'Courier New', monospace;
-      font-size: 12px;
-      line-height: 1.65;
-      color: #1a1a1a;
-      white-space: pre-wrap;
-      word-break: break-word;
-      overflow: auto;
-      max-height: 280px;
-    }
-
-    .insert-btn {
-      width: 100%;
-      padding: 10px;
-      background: #6366f1;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.15s;
-      font-family: inherit;
-    }
-
-    .insert-btn:hover { background: #4f46e5; }
-
-    .toast {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #22c55e;
-      color: white;
-      padding: 8px 18px;
-      border-radius: 8px;
-      font-size: 12px;
-      opacity: 0;
-      transition: opacity 0.3s;
-      pointer-events: none;
-    }
-    .toast.show { opacity: 1; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>◈ Generated Proof Image</h1>
-    <p>Claude generated this TikZ diagram from your selected proof.</p>
-  </div>
-
-  <div class="section">
-    <div class="section-header">
-      <span class="label">Preamble — add to top of your .tex file</span>
-      <button class="copy-btn" onclick="copySection('preamble', this)">Copy</button>
-    </div>
-    <pre id="preamble">${escapedPreamble}</pre>
-  </div>
-
-  <div class="section">
-    <div class="section-header">
-      <span class="label">TikZ Figure — paste where you want the image</span>
-      <button class="copy-btn" onclick="copySection('figure', this)">Copy</button>
-    </div>
-    <pre id="figure">${escapedFigure}</pre>
-  </div>
-
-  <button class="insert-btn" onclick="insertAtCursor()">
-    Insert Figure After Selection in .tex File
-  </button>
-
-  <div class="toast" id="toast"></div>
-
-  <script>
-    const vscode = acquireVsCodeApi();
-
-    function copySection(id, btn) {
-      const text = document.getElementById(id).textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = 'Copied!';
-        btn.classList.add('copied');
-        setTimeout(() => {
-          btn.textContent = 'Copy';
-          btn.classList.remove('copied');
-        }, 2000);
-      });
-    }
-
-    function insertAtCursor() {
-      vscode.postMessage({ type: 'insertAtCursor' });
-    }
-
-    window.addEventListener('message', function(e) {
-      const toast = document.getElementById('toast');
-      toast.textContent = e.data.text;
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2500);
-    });
-  </script>
-</body>
-</html>`;
-
-  panel.webview.onDidReceiveMessage(async message => {
-    if (message.type === 'insertAtCursor') {
-      const editor = vscode.window.visibleTextEditors.find(e => isTexFile(e.document));
-      if (editor) {
-        await editor.edit(eb => eb.insert(editor.selection.end, '\n\n' + figureCode));
-        panel.webview.postMessage({ text: 'Inserted into document ✓' });
-      }
-    }
-  }, undefined, context.subscriptions);
-}
-
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -326,11 +122,99 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+// ── TikZ → PNG ────────────────────────────────────────────────────────────────
+
+async function compileTikzToPng(tikzCode: string): Promise<string | undefined> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'latex-viz-'));
+
+  const texContent = [
+    '\\documentclass[tikz,border=10pt]{standalone}',
+    '\\usepackage{tikz}',
+    '\\usepackage{pgfplots}',
+    '\\pgfplotsset{compat=1.18}',
+    '\\usetikzlibrary{arrows.meta,calc,positioning,decorations.pathmorphing}',
+    '\\begin{document}',
+    tikzCode,
+    '\\end{document}',
+  ].join('\n');
+
+  const texFile = path.join(tmpDir, 'preview.tex');
+  const pdfFile = path.join(tmpDir, 'preview.pdf');
+  const pngFile = path.join(tmpDir, 'preview.png');
+  const logFile = path.join(tmpDir, 'preview.log');
+
+  fs.writeFileSync(texFile, texContent);
+  outputChannel.appendLine('Full tex content:\n' + texContent);
+  outputChannel.appendLine('compileTikzToPng: compiling ' + texFile);
+
+  try {
+    // Step 1: compile to PDF
+    try {
+      await execFileAsync(
+        '/usr/local/texlive/2026basic/bin/universal-darwin/pdflatex',
+        ['-interaction=nonstopmode', '-output-directory', tmpDir, texFile],
+        { timeout: 15000 }
+      );
+    } catch (pdflatexErr: any) {
+      // pdflatex exits with code 1 even on success with warnings
+      // only fail if PDF wasn't actually generated
+      if (!fs.existsSync(pdfFile)) {
+        const log = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : 'no log';
+        outputChannel.appendLine('FAIL: pdflatex failed and no PDF generated');
+        outputChannel.appendLine('log tail:\n' + log.slice(-2000));
+        return undefined;
+      }
+      outputChannel.appendLine('pdflatex had warnings but PDF was generated, continuing...');
+    }
+
+    if (!fs.existsSync(pdfFile)) {
+      outputChannel.appendLine('FAIL: PDF not found after compilation');
+      return undefined;
+    }
+
+    outputChannel.appendLine('PDF generated, converting to PNG...');
+    outputChannel.appendLine('PDF exists check: ' + fs.existsSync(pdfFile));
+    outputChannel.appendLine('PDF path: ' + pdfFile);
+    outputChannel.appendLine('PNG path: ' + pngFile);
+    // Step 2: convert PDF → PNG using magick
+    await execFileAsync(
+      'magick',
+      ['-density', '150', pdfFile, '-quality', '90', pngFile],
+      { timeout: 10000 }
+    );
+
+    if (!fs.existsSync(pngFile)) {
+      outputChannel.appendLine('FAIL: PNG not generated');
+      return undefined;
+    }
+
+    outputChannel.appendLine('PNG generated successfully');
+    return fs.readFileSync(pngFile).toString('base64');
+
+  } catch (err: any) {
+    const log = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : 'no log file';
+    
+    const persistLog = path.join(os.homedir(), 'latex-viz-error.log');
+    fs.writeFileSync(persistLog, 'TEX:\n' + texContent + '\n\nFULL LOG:\n' + log);
+
+
+    outputChannel.appendLine('ERROR: ' + err.message);
+    outputChannel.appendLine('stdout: ' + (err.stdout || 'none'));
+    outputChannel.appendLine('stderr: ' + (err.stderr || 'none'));
+    outputChannel.appendLine('ERROR: ' + err.message);
+    outputChannel.appendLine('Full log written to: ' + persistLog);
+    return undefined;
+  } finally {
+    // DON'T delete tmpDir yet so we can inspect
+    // try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
 
 // ── Activation ────────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log('LaTeX Visualiser is now active');
+  outputChannel.appendLine('LaTeX Visualiser is now active');
+  outputChannel.show();
 
   const openViewerCmd = vscode.commands.registerCommand(
     'latexVisualiser.openViewer',
@@ -342,7 +226,6 @@ export function activate(context: vscode.ExtensionContext) {
     () => refreshVisualizations()
   );
 
-  // NEW: Generate proof image from selection
   const generateProofImageCmd = vscode.commands.registerCommand(
     'latexVisualiser.generateProofImage',
     () => generateProofImage(context)
@@ -380,17 +263,21 @@ export function activate(context: vscode.ExtensionContext) {
 // ── Generate Proof Image ──────────────────────────────────────────────────────
 
 async function generateProofImage(context: vscode.ExtensionContext) {
+  outputChannel.appendLine('generateProofImage triggered');
+
   const editor = vscode.window.activeTextEditor;
-  if (!editor) { return; }
+  if (!editor) {
+    outputChannel.appendLine('No active editor');
+    return;
+  }
 
   if (editor.selection.isEmpty) {
-    vscode.window.showWarningMessage(
-      'Select a proof block first, then right-click → Generate Proof Image.'
-    );
+    vscode.window.showWarningMessage('Select a proof block first, then right-click → Generate Proof Image.');
     return;
   }
 
   const selectedText = editor.document.getText(editor.selection);
+  outputChannel.appendLine('Selected text length: ' + selectedText.length);
 
   await vscode.window.withProgress(
     {
@@ -400,15 +287,216 @@ async function generateProofImage(context: vscode.ExtensionContext) {
     },
     async () => {
       try {
+        outputChannel.appendLine('Calling Claude...');
         const { preamble, tikzCode } = await generateTikZFromClaude(selectedText);
+        outputChannel.appendLine('Claude returned TikZ, length: ' + tikzCode.length);
+
         const figure = wrapInFigure(tikzCode);
-        showInsertPopup(preamble, figure, context);
+        showChatPanel(preamble, figure, tikzCode, context);
+
+        outputChannel.appendLine('Compiling TikZ to PNG...');
+        const pngBase64 = await compileTikzToPng(tikzCode);
+
+        if (currentChatPanel) {
+          if (pngBase64) {
+            outputChannel.appendLine('PNG ready, sending to webview');
+            currentChatPanel.webview.postMessage({ type: 'pdfPreview', pdfBase64: pngBase64 });
+          } else {
+            outputChannel.appendLine('PNG compilation failed');
+            currentChatPanel.webview.postMessage({
+              type: 'pdfError',
+              text: 'Could not compile preview — check TikZ syntax',
+            });
+          }
+        }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
+        outputChannel.appendLine('ERROR: ' + errMsg);
         vscode.window.showErrorMessage(`LaTeX Visualiser: ${errMsg}`);
       }
     }
   );
+}
+
+// ── Chat panel ────────────────────────────────────────────────────────────────
+
+function showChatPanel(
+  preamble: string,
+  figureCode: string,
+  tikzCode: string,
+  context: vscode.ExtensionContext
+) {
+  const panel = vscode.window.createWebviewPanel(
+    'latexProofChat',
+    '◈ Proof Diagram Chat',
+    vscode.ViewColumn.Beside,
+    { enableScripts: true }
+  );
+
+  currentChatPanel = panel;
+  panel.onDidDispose(() => { currentChatPanel = undefined; });
+
+  let latestPreamble = preamble;
+  let latestTikz     = tikzCode;
+
+  panel.webview.html = getChatPanelHtml(tikzCode);
+
+  panel.webview.onDidReceiveMessage(async message => {
+
+    if (message.type === 'openCodePanel') {
+      const tikzToShow = message.tikz || latestTikz;
+      showCodePanel(latestPreamble, wrapInFigure(tikzToShow), context);
+    }
+
+    if (message.type === 'adjustDiagram') {
+      try {
+        outputChannel.appendLine('Adjusting diagram: ' + message.text);
+        const client = getAnthropicClient();
+        const response = await client.messages.create({
+          model: 'claude-opus-4-6',
+          max_tokens: 2048,
+          messages: [{
+            role: 'user',
+            content: `You are a TikZ expert. Here is the current TikZ diagram:
+
+\`\`\`latex
+${latestTikz}
+\`\`\`
+
+The user wants to make this adjustment: ${message.text}
+
+Return ONLY the updated TikZ code starting with \\begin{tikzpicture} and ending with \\end{tikzpicture}. No explanation, no markdown fences.
+
+If the adjustment requires new preamble packages or libraries, prepend them as a comment like:
+% PREAMBLE: \\usetikzlibrary{...}`,
+          }],
+        });
+
+        const content = response.content[0];
+        if (content.type !== 'text') { throw new Error('Unexpected response'); }
+
+        const preambleUpdateMatch = content.text.match(/% PREAMBLE: (.+)/);
+        if (preambleUpdateMatch) {
+          latestPreamble = latestPreamble + '\n' + preambleUpdateMatch[1];
+        }
+
+        latestTikz = extractTikzCode(content.text);
+        panel.webview.postMessage({ type: 'newDiagram', tikz: latestTikz });
+
+        panel.webview.postMessage({ type: 'compiling' });
+        outputChannel.appendLine('Compiling adjusted TikZ...');
+        const pngBase64 = await compileTikzToPng(latestTikz);
+
+        if (pngBase64) {
+          panel.webview.postMessage({ type: 'pdfPreview', pdfBase64: pngBase64 });
+        } else {
+          panel.webview.postMessage({ type: 'pdfError', text: 'Could not compile preview — check TikZ syntax' });
+        }
+
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        outputChannel.appendLine('adjustDiagram ERROR: ' + errMsg);
+        panel.webview.postMessage({ type: 'error', text: errMsg });
+      }
+    }
+
+  }, undefined, context.subscriptions);
+}
+
+// ── Code panel ────────────────────────────────────────────────────────────────
+
+function showCodePanel(preamble: string, figureCode: string, context: vscode.ExtensionContext) {
+  const panel = vscode.window.createWebviewPanel(
+    'latexCodePanel',
+    '◈ Image Code',
+    vscode.ViewColumn.Beside,
+    { enableScripts: true }
+  );
+
+  panel.webview.html = getCodePanelHtml(preamble, figureCode);
+
+  panel.webview.onDidReceiveMessage(async message => {
+    if (message.type === 'insertAtCursor') {
+      const editor = vscode.window.visibleTextEditors.find(e => isTexFile(e.document));
+      if (editor) {
+        await editor.edit(eb => eb.insert(editor.selection.end, '\n\n' + figureCode));
+        panel.webview.postMessage({ text: 'Inserted into document ✓' });
+      }
+    }
+  }, undefined, context.subscriptions);
+}
+
+function getCodePanelHtml(preamble: string, figureCode: string): string {
+  const escapedPreamble = escapeHtml(preamble);
+  const escapedFigure   = escapeHtml(figureCode);
+
+  return [
+    '<!DOCTYPE html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="UTF-8">',
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\';">',
+    '<title>Image Code</title>',
+    '<style>',
+    '* { margin: 0; padding: 0; box-sizing: border-box; }',
+    'body { background: #f9f9f9; color: #1a1a1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 28px 24px; display: flex; flex-direction: column; gap: 20px; min-height: 100vh; }',
+    '.header h1 { font-size: 15px; font-weight: 600; color: #1a1a1a; margin-bottom: 4px; }',
+    '.header p { font-size: 12px; color: #888; line-height: 1.5; }',
+    '.section { background: #fff; border: 1px solid #e4e4e4; border-radius: 10px; overflow: hidden; }',
+    '.section-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #f4f4f4; border-bottom: 1px solid #e4e4e4; }',
+    '.section-header .label { font-size: 11px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }',
+    '.copy-btn { font-size: 11px; color: #6366f1; background: none; border: 1px solid #6366f1; border-radius: 5px; padding: 2px 10px; cursor: pointer; transition: all 0.15s; font-family: inherit; }',
+    '.copy-btn:hover { background: #6366f1; color: white; }',
+    '.copy-btn.copied { background: #22c55e; border-color: #22c55e; color: white; }',
+    'pre { padding: 14px 16px; font-family: "Fira Code", "SF Mono", "Courier New", monospace; font-size: 12px; line-height: 1.65; color: #1a1a1a; white-space: pre-wrap; word-break: break-word; overflow: auto; max-height: 280px; }',
+    '.insert-btn { width: 100%; padding: 10px; background: #6366f1; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s; font-family: inherit; }',
+    '.insert-btn:hover { background: #4f46e5; }',
+    '.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #22c55e; color: white; padding: 8px 18px; border-radius: 8px; font-size: 12px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }',
+    '.toast.show { opacity: 1; }',
+    '</style>',
+    '</head>',
+    '<body>',
+    '<div class="header">',
+    '  <h1>&#9672; Image Code</h1>',
+    '  <p>Latest version of your generated TikZ diagram.</p>',
+    '</div>',
+    '<div class="section">',
+    '  <div class="section-header">',
+    '    <span class="label">Preamble — add to top of your .tex file</span>',
+    '    <button class="copy-btn" onclick="copySection(\'preamble\', this)">Copy</button>',
+    '  </div>',
+    '  <pre id="preamble">' + escapedPreamble + '</pre>',
+    '</div>',
+    '<div class="section">',
+    '  <div class="section-header">',
+    '    <span class="label">TikZ Figure — paste where you want the image</span>',
+    '    <button class="copy-btn" onclick="copySection(\'figure\', this)">Copy</button>',
+    '  </div>',
+    '  <pre id="figure">' + escapedFigure + '</pre>',
+    '</div>',
+    '<button class="insert-btn" onclick="insertAtCursor()">Insert Figure After Selection in .tex File</button>',
+    '<div class="toast" id="toast"></div>',
+    '<script>',
+    '  const vscode = acquireVsCodeApi();',
+    '  function copySection(id, btn) {',
+    '    const text = document.getElementById(id).textContent;',
+    '    navigator.clipboard.writeText(text).then(function() {',
+    '      btn.textContent = "Copied!";',
+    '      btn.classList.add("copied");',
+    '      setTimeout(function() { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 2000);',
+    '    });',
+    '  }',
+    '  function insertAtCursor() { vscode.postMessage({ type: "insertAtCursor" }); }',
+    '  window.addEventListener("message", function(e) {',
+    '    const toast = document.getElementById("toast");',
+    '    toast.textContent = e.data.text;',
+    '    toast.classList.add("show");',
+    '    setTimeout(function() { toast.classList.remove("show"); }, 2500);',
+    '  });',
+    '<\/script>',
+    '</body>',
+    '</html>',
+  ].join('\n');
 }
 
 // ── Viewer ────────────────────────────────────────────────────────────────────
@@ -437,9 +525,7 @@ async function openViewer(context: vscode.ExtensionContext) {
   const pdfPath = findPdfForTex(texPath);
 
   if (!pdfPath) {
-    vscode.window.showWarningMessage(
-      'No compiled PDF found. Compile your .tex file first, or set latexVisualiser.pdfPath in settings.'
-    );
+    vscode.window.showWarningMessage('No compiled PDF found. Compile your .tex file first.');
   }
 
   if (currentPanel) {
